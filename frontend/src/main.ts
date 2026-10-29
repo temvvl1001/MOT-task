@@ -151,7 +151,7 @@ form.addEventListener('submit', async (event) => {
       message: String(data.get('message') ?? ''),
     });
     upsert(created);
-    showFeedback('success', `Request created (${created.status}). ID: ${created.id}`);
+    showFeedback('success', `Request sent to ${created.recipient}. `);
     form.reset();
   } catch (err) {
     showFeedback('error', err instanceof Error ? err.message : 'Something went wrong');
