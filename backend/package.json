@@ -1,0 +1,26 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@aws-sdk/client-apigatewaymanagementapi": "^3.1157.0",
+    "@aws-sdk/client-dynamodb": "^3.1157.0",
+    "@aws-sdk/client-sqs": "^3.1157.0",
+    "@aws-sdk/lib-dynamodb": "^3.1157.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.164",
+    "@types/node": "^26.6.5",
+    "esbuild": "^0.28.2",
+    "serverless-esbuild": "^1.57.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}
