@@ -7,20 +7,6 @@ import { json } from '../lib/http';
 import { Notification } from '../lib/types';
 import { validateCreateInput } from '../lib/validate';
 
-const CHANNELS = ['EMAIL', 'SMS', 'PUSH'] as const;
-
-const validate = (body: any): string | null => {
-  if (!body || typeof body !== 'object') return 'Request body must be a JSON object';
-  if (typeof body.recipient !== 'string' || !body.recipient.trim())
-    return 'recipient is required';
-  if (!CHANNELS.includes(body.channel))
-    return `channel must be one of ${CHANNELS.join(', ')}`;
-  if (typeof body.message !== 'string' || !body.message.trim())
-    return 'message is required';
-  if (body.message.length > 500) return 'message must be 500 characters or less';
-  return null;
-};
-
 export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   let body: any;
   try {
