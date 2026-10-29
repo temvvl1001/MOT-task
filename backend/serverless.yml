@@ -110,6 +110,9 @@ resources:
       Properties:
         TableName: ${self:provider.environment.CONNECTIONS_TABLE}
         BillingMode: PAY_PER_REQUEST
+        TimeToLiveSpecification:
+          AttributeName: expiresAt
+          Enabled: true
         AttributeDefinitions:
           - AttributeName: connectionId
             AttributeType: S
