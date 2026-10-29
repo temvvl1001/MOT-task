@@ -1,0 +1,133 @@
+service: notification-system
+frameworkVersion: '3'
+
+plugins:
+  - serverless-esbuild
+
+custom:
+  esbuild:
+    bundle: true
+    minify: false
+    target: node20
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  memorySize: 256
+  region: ap-southeast-2
+  stage: ${opt:stage, 'dev'}
+  httpApi:
+    cors: true
+  websocketsApiName: ${self:service}-${self:provider.stage}-ws
+  websocketsApiRouteSelectionExpression: $request.body.action
+  environment:
+    NOTIFICATIONS_TABLE: ${self:service}-${self:provider.stage}-notifications
+    CONNECTIONS_TABLE: ${self:service}-${self:provider.stage}-connections
+    QUEUE_URL:
+      Ref: NotificationQueue
+    WS_ENDPOINT:
+      Fn::Join:
+        - ''
+        - - 'https://'
+          - Ref: WebsocketsApi
+          - '.execute-api.${self:provider.region}.amazonaws.com/${self:provider.stage}'
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:PutItem
+            - dynamodb:GetItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:Scan
+          Resource:
+            - Fn::GetAtt: [NotificationsTable, Arn]
+            - Fn::GetAtt: [ConnectionsTable, Arn]
+        - Effect: Allow
+          Action:
+            - sqs:SendMessage
+          Resource:
+            Fn::GetAtt: [NotificationQueue, Arn]
+        - Effect: Allow
+          Action:
+            - execute-api:ManageConnections
+          Resource:
+            - arn:aws:execute-api:${self:provider.region}:*:*/${self:provider.stage}/POST/@connections/*
+
+functions:
+  createNotification:
+    handler: src/handlers/createNotification.handler
+    events:
+      - httpApi:
+          path: /notifications
+          method: post
+
+  listNotifications:
+    handler: src/handlers/listNotifications.handler
+    events:
+      - httpApi:
+          path: /notifications
+          method: get
+
+  worker:
+    handler: src/handlers/worker.handler
+    timeout: 30
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt: [NotificationQueue, Arn]
+          batchSize: 1
+
+  wsConnect:
+    handler: src/handlers/wsConnect.handler
+    events:
+      - websocket:
+          route: $connect
+
+  wsDisconnect:
+    handler: src/handlers/wsDisconnect.handler
+    events:
+      - websocket:
+          route: $disconnect
+
+resources:
+  Resources:
+    NotificationsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.NOTIFICATIONS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+
+    ConnectionsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.CONNECTIONS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: connectionId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: connectionId
+            KeyType: HASH
+
+    NotificationDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${self:provider.stage}-dlq
+
+    NotificationQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${self:provider.stage}-queue
+        VisibilityTimeout: 180
+        RedrivePolicy:
+          deadLetterTargetArn:
+            Fn::GetAtt: [NotificationDLQ, Arn]
+          maxReceiveCount: 3
