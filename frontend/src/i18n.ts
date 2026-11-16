@@ -25,12 +25,19 @@ export const t = {
     toSignUp: 'Бүртгэлгүй юу? Бүртгүүлэх',
     toSignIn: 'Бүртгэлтэй юу? Нэвтрэх',
     failed: 'Нэвтрэхэд алдаа гарлаа. Дахин оролдоно уу.',
+    notRegistered: 'Энэ имэйлээр бүртгэл олдсонгүй. Бүртгүүлнэ үү.',
+    wrongCredentials: 'Имэйл эсвэл нууц үг буруу байна.',
   },
 
   form: {
     recipient: 'Хүлээн авагч',
-    recipientPlaceholder: 'bold@example.com',
-    hintBefore: 'Туршиж үзэх:',
+    // What the recipient looks like depends on the channel.
+    recipientPlaceholder: {
+      EMAIL: 'bold@gmail.com',
+      SMS: '+97699112233',
+      PUSH: 'төхөөрөмжийн ID',
+    } satisfies Record<Channel, string>,
+    hintBefore: 'Имэйл сувгаар туршиж үзэх:',
     hintFail: 'татгалзана',
     hintFlaky: 'дахин оролдоод хүргэнэ',
     hintOutage: 'дахин оролдоод бууж өгнө',
@@ -76,6 +83,9 @@ export const t = {
       invalid_json: 'Хүсэлтийн бүтэц буруу байна.',
       recipient_required: 'Хүлээн авагчийг бөглөнө үү.',
       invalid_channel: 'Сувгаа зөв сонгоно уу.',
+      invalid_recipient_email: 'Имэйл хаяг буруу байна (жишээ нь bold@gmail.com).',
+      invalid_recipient_phone: 'Утасны дугаар буруу байна (жишээ нь +97699112233 эсвэл 99112233).',
+      invalid_recipient_device: 'Төхөөрөмжийн ID 3-128 тэмдэгт байх ёстой бөгөөд хоосон зай агуулж болохгүй.',
       message_required: 'Мессежээ бичнэ үү.',
       message_too_long: 'Мессеж хэт урт байна (дээд тал нь 500 тэмдэгт).',
       invalid_idempotency_key: 'Хүсэлтийн давхардлаас хамгаалах түлхүүр буруу байна.',

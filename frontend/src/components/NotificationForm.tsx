@@ -52,7 +52,9 @@ export function NotificationForm({ onCreate }: Props) {
           <input
             value={recipient}
             onChange={(e) => setRecipient(e.target.value)}
-            placeholder={t.form.recipientPlaceholder}
+            placeholder={t.form.recipientPlaceholder[channel]}
+            inputMode={channel === 'EMAIL' ? 'email' : channel === 'SMS' ? 'tel' : 'text'}
+            autoComplete="off"
           />
         </label>
         <p className="hint">

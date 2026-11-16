@@ -514,7 +514,8 @@ resources:
         UserPoolId:
           Ref: UserPool
         GenerateSecret: false
-        PreventUserExistenceErrors: ENABLED
+
+        PreventUserExistenceErrors: LEGACY
         ExplicitAuthFlows:
           - ALLOW_USER_PASSWORD_AUTH
           - ALLOW_REFRESH_TOKEN_AUTH

@@ -64,6 +64,11 @@ PENDING ──► PROCESSING ──► COMPLETED
 - **Эзэмшил:** Бүх notification-д `userId` (token-ий `sub`) хадгалагдана. `userId`-г **зөвхөн token-оос**
   авна, request body-д илгээсэн `userId`-г үл тооно. Жагсаалт, pagination cursor, WebSocket push бүгд
   `userId`-аар хязгаарлагдана: өөр хэрэглэгчийн өгөгдлийг харах, cursor-оор нь орох боломжгүй.
+- **Нэвтрэх үеийн алдаа:** Бүртгэлгүй имэйлд "Энэ имэйлээр бүртгэл олдсонгүй. Бүртгүүлнэ үү.", бүртгэлтэй
+  имэйлийн буруу нууц үгэнд "Имэйл эсвэл нууц үг буруу байна." гэж ялгаж харуулна. Үүний тулд Cognito-ийн
+  `PreventUserExistenceErrors: LEGACY`. Хямдрал: халдагч аль имэйл бүртгэлтэй гэдгийг таах боломжтой болно
+  (sign-up ч "бүртгэлтэй" гэж хэлдэг тул эрсдэл бүрэн шинэ биш). Нуух бол `ENABLED` болгоход хоёр тохиолдол
+  хоёулаа "имэйл эсвэл нууц үг буруу" болно.
 - **Demo-ийн хялбарчлал:** `preSignUp` trigger нь шинэ хэрэглэгчийг имэйл баталгаажуулалтгүй шууд
   баталгаажуулна. Production-д энэ trigger-ийг авч, Cognito-ийн баталгаажуулах кодыг ашиглана.
 
@@ -187,10 +192,10 @@ Worker дундаа унавал 2 минутын lease (Lambda timeout 60с-э�
   "id": "5f0c9a52-6c1d-4d3e-9b1a-2d6f1c3e8a77",
   "userId": "c99eb4d8-50e1-70eb-0b86-b6def0dd1613",
   "recipient": "bold@example.com",
-  "channel": "EMAIL",
+  "channel": "Имейл",
   "message": "Hello",
   "status": "COMPLETED",
-  "result": "EMAIL сувгаар bold@example.com хаяг руу амжилттай хүргэлээ",
+  "result": "Имейл сувгаар bold@example.com хаяг руу амжилттай хүргэлээ",
   "attempts": 1,
   "createdAt": "2026-11-16T04:34:03.120Z",
   "updatedAt": "2026-11-16T04:34:06.431Z"
@@ -215,8 +220,11 @@ curl -X POST "$API_URL/notifications" \
 | `202` | Notification (`PENDING`) | Хадгалагдсан, queue-д орох нь хойшилсон (sweeper орууллана) |
 | `200` | Анхны notification | Ижил `Idempotency-Key`-тэй, ижил агуулгатай давтан хүсэлт |
 | `409` | `{ "code": "idempotency_key_reused", … }` | Ижил `Idempotency-Key`-г өөр агуулгатай хүсэлтэд ашигласан |
-| `400` | `{ "code": "recipient_required", "error": "recipient is required" }` гэх мэт | Буруу JSON, validate алдаа (channel, 500-аас урт message), буруу `Idempotency-Key`. Кодын жагсаалт доор |
+| `400` | `{ "code": "recipient_required", "error": "recipient is required" }` гэх мэт | Буруу JSON, validate алдаа (channel, **сувгаас хамаарсан хүлээн авагчийн хэлбэр**, 500-аас урт message), буруу `Idempotency-Key`. Кодын жагсаалт доор |
 | `401` | `{ "message": "Unauthorized" }` (API Gateway) | Token байхгүй, хуурамч, хугацаа дууссан |
+
+**Хүлээн авагчийн хэлбэр (суваг тус бүр):** `EMAIL` нь `нэр@домэйн.төрөл` (254 хүртэл тэмдэгт), `SMS` нь 8-15 оронтой
+утасны дугаар (`+` ба зай, зураас зөвшөөрнө), `PUSH` нь хоосон зайгүй 3-128 тэмдэгт. Шалгалт сервер дээр.
 
 **`GET /notifications?limit=20&nextToken=…`** → `200 { "items": [Notification…], "nextToken": "…" }`
 (`nextToken` нь сүүлийн хуудсанд байхгүй). Буруу `limit`, `nextToken` → `400`.
@@ -240,6 +248,9 @@ API-ийн алдаа бүр **тогтвортой `code`** ба хөгжүүл
 |---|---|---|
 | `invalid_json`, `invalid_body` | Body JSON биш, объект биш | Хүсэлтийн бүтэц буруу байна. |
 | `recipient_required` | Хүлээн авагч хоосон | Хүлээн авагчийг бөглөнө үү. |
+| `invalid_recipient_email` | `EMAIL` суваг, имэйлийн хэлбэргүй (`asdf`, `bold@gmail`) | Имэйл хаяг буруу байна (жишээ нь bold@gmail.com). |
+| `invalid_recipient_phone` | `SMS` суваг, 8-15 оронтой дугаар биш | Утасны дугаар буруу байна (жишээ нь +97699112233 эсвэл 99112233). |
+| `invalid_recipient_device` | `PUSH` суваг, 3-128 тэмдэгт биш эсвэл хоосон зайтай | Төхөөрөмжийн ID 3-128 тэмдэгт байх ёстой бөгөөд хоосон зай агуулж болохгүй. |
 | `invalid_channel` | `EMAIL`, `SMS`, `PUSH`-ээс өөр суваг | Сувгаа зөв сонгоно уу. |
 | `message_required` | Мессеж хоосон | Мессежээ бичнэ үү. |
 | `message_too_long` | 500 тэмдэгтээс урт | Мессеж хэт урт байна (дээд тал нь 500 тэмдэгт). |
@@ -354,8 +365,8 @@ cd backend && npx serverless remove
 
 | Хэсэг | Тоо | Юуг шалгадаг |
 |---|---|---|
-| `backend` (`cd backend && npm test`) | **136** | validate, handler бүр, worker-ийн retry/permanent/duplicate/batch, status шилжилтийн нөхцөл, pagination cursor, authorizer, broadcast, sweeper, DLQ, idempotency (409 орно), TTL, `web` handler (замын аюулгүй байдал, cache, gzip, CSP) |
-| `frontend` (`cd frontend && npm test`) | **48** | Live update-ийн нийлүүлэлт (хуучин хувилбар шинийг дарахгүй), pagination, WebSocket дахин холбогдох ба backoff, token шинэчлэл, API клиент, idempotency түлхүүрийн логик |
+| `backend` (`cd backend && npm test`) | **167** | validate (суваг тус бүрийн хүлээн авагчийн хэлбэр орно), handler бүр, worker-ийн retry/permanent/duplicate/batch, status шилжилтийн нөхцөл, pagination cursor, authorizer, broadcast, sweeper, DLQ, idempotency (409 орно), TTL, `web` handler (замын аюулгүй байдал, cache, gzip, CSP) |
+| `frontend` (`cd frontend && npm test`) | **50** | Live update-ийн нийлүүлэлт (хуучин хувилбар шинийг дарахгүй), pagination, WebSocket дахин холбогдох ба backoff, token шинэчлэл, API клиент, idempotency түлхүүрийн логик |
 
 AWS-ийн client-уудыг mock хийсэн тул credential шаардахгүй. Mock хийсэн DynamoDB нөхцөлт илэрхийллийг
 өөрөө ажиллуулдаггүй тул тэдгээрийг доорх бодит орчны шалгалт баталгаажуулна.
@@ -373,31 +384,33 @@ COGNITO_CLIENT_ID=<client id> \
 node scripts/e2e.mjs
 ```
 
-Үр дүн (`ap-southeast-2`, Node.js 22 runtime, **20/20 давсан**). Скрипт нь функц, role, индекс, alarm-ыг
+Үр дүн (`ap-southeast-2`, Node.js 22 runtime, **22/22 давсан**). Скрипт нь функц, role, индекс, alarm-ыг
 бодитоор уншиж шалгадаг тул инфраструктурын тохиргоо (IAM, PITR, TTL, throttle) ч үүнд орсон:
 
 | # | Шалгалт | Үр дүн | Хугацаа |
 |---|---|---|---|
-| 1 | Frontend: HTTPS дээр, CSP ба аюулгүй байдлын header-тэй, deep link index.html-ээр хариулна | PASS | 4.0 s |
+| 1 | Frontend: HTTPS дээр, CSP ба аюулгүй байдлын header-тэй, deep link index.html-ээр хариулна | PASS | 3.7 s |
 | 2 | HTTP: token-гүй хүсэлт татгалзагдана (401) | PASS | 0.8 s |
 | 3 | HTTP: хуурамч token татгалзагдана (401) | PASS | 0.3 s |
-| 4 | WebSocket: token-гүй холболт татгалзагдана | PASS | 1.6 s |
+| 4 | WebSocket: token-гүй холболт татгалзагдана | PASS | 1.5 s |
 | 5 | WebSocket: хуурамч token-тэй холболт татгалзагдана | PASS | 1.4 s |
-| 6 | POST шалгалт: 400 ба тогтвортой алдааны код буцаана | PASS | 2.0 s |
-| 7 | Амжилт: PENDING -> PROCESSING -> COMPLETED, WebSocket-ээр, polling-гүй | PASS | 3.5 s |
-| 8 | Байнгын алдаа: шууд FAILED, дахин оролдохгүй | PASS | 3.5 s |
-| 9 | Амжилт: нэг хэрэглэгчийн хоёр дахь tab ижил update-ийг авна | PASS | 3.5 s |
-| 10 | Түр зуурын алдаа сэргэхгүй бол: сүүлийн оролдлогын дараа FAILED | PASS | 21.6 s |
-| 11 | Түр зуурын алдаа: backoff-той дахин оролдож, 3-р оролдлогод COMPLETED | PASS | 25.2 s |
-| 12 | Тусгаарлалт: өөр хэрэглэгч бусдын notification, live update-ийг хардаггүй | PASS | 1.5 s |
-| 13 | Тусгаарлалт: өөр хэрэглэгчийн pagination cursor татгалзагдана | PASS | 1.7 s |
-| 14 | Pagination: 5 мөрийг 2-оор унших, шинэ нь эхэнд, давхардал ба алдагдалгүй | PASS | 4.1 s |
-| 15 | Idempotency-Key: давтагдсан хүсэлт яг нэг notification үүсгэнэ | PASS | 2.0 s |
-| 16 | Давхар SQS хүргэлт: notification яг нэг удаа боловсруулагдана | PASS | 16.7 s |
-| 17 | Хэсэгчилсэн алдаа: SQS-д хүрээгүй PENDING мөрийг sweeper дахин оруулна | PASS | 11.2 s |
-| 18 | Dead-letter queue: DLQ-д орсон notification FAILED болно | PASS | 5.5 s |
-| 19 | IAM: функц бүр зөвхөн өөрт хэрэгтэй эрхтэй, "*" нөөц байхгүй (wsAuthorizer, preSignUp зөвхөн лог) | PASS | 46.4 s |
-| 20 | Тохиргоо: PITR, TTL, API throttle ба хяналтын alarm-ууд идэвхтэй | PASS | 8.6 s |
+| 6 | POST шалгалт: 400 ба тогтвортой алдааны код буцаана | PASS | 2.1 s |
+| 7 | Хүлээн авагчийн хэлбэр: суваг тус бүрт имэйл, утас, төхөөрөмжийн ID шалгагдана | PASS | 2.5 s |
+| 8 | Нэвтрэлт: бүртгэлгүй имэйл ба буруу нууц үгийг ялгаж хэлнэ | PASS | 2.9 s |
+| 9 | Амжилт: нэг хэрэглэгчийн хоёр дахь tab ижил update-ийг авна | PASS | 2.3 s |
+| 10 | Амжилт: PENDING -> PROCESSING -> COMPLETED, WebSocket-ээр, polling-гүй | PASS | 2.3 s |
+| 11 | Байнгын алдаа: шууд FAILED, дахин оролдохгүй | PASS | 2.7 s |
+| 12 | Түр зуурын алдаа: backoff-той дахин оролдож, 3-р оролдлогод COMPLETED | PASS | 24.8 s |
+| 13 | Түр зуурын алдаа сэргэхгүй бол: сүүлийн оролдлогын дараа FAILED | PASS | 26.3 s |
+| 14 | Тусгаарлалт: өөр хэрэглэгч бусдын notification, live update-ийг хардаггүй | PASS | 1.9 s |
+| 15 | Тусгаарлалт: өөр хэрэглэгчийн pagination cursor татгалзагдана | PASS | 1.4 s |
+| 16 | Pagination: 5 мөрийг 2-оор унших, шинэ нь эхэнд, давхардал ба алдагдалгүй | PASS | 3.5 s |
+| 17 | Idempotency-Key: давтагдсан хүсэлт яг нэг notification үүсгэнэ | PASS | 2.0 s |
+| 18 | Давхар SQS хүргэлт: notification яг нэг удаа боловсруулагдана | PASS | 17.1 s |
+| 19 | Хэсэгчилсэн алдаа: SQS-д хүрээгүй PENDING мөрийг sweeper дахин оруулна | PASS | 10.7 s |
+| 20 | Dead-letter queue: DLQ-д орсон notification FAILED болно | PASS | 5.4 s |
+| 21 | IAM: функц бүр зөвхөн өөрт хэрэгтэй эрхтэй, "*" нөөц байхгүй (wsAuthorizer, preSignUp зөвхөн лог) | PASS | 43.1 s |
+| 22 | Тохиргоо: PITR, TTL, API throttle ба хяналтын alarm-ууд идэвхтэй | PASS | 7.5 s |
 
 Мөн React апп-ыг **deploy хийсэн HTTPS хаяг дээр** (CSP идэвхтэй) хөтөчөөр туршсан, console-д алдаагүй: хяналтын самбар `live` болж, `flaky@…` илгээхэд
 карт `2-р оролдлого`, "1/3-р оролдлого амжилтгүй: … Дахин оролдоно." гэж харагдаад `3-р оролдлого`-д
@@ -407,7 +420,9 @@ node scripts/e2e.mjs
 
 ## Хязгаарлалт
 
-- **Имэйл баталгаажуулалтгүй sign-up** (`preSignUp` trigger). Зөвхөн demo-д зориулсан.
+- **Имэйл баталгаажуулалтгүй sign-up** (`preSignUp` trigger). Зөвхөн demo-д зориулсан. Мөн имэйл хаягийн **хэлбэр**
+  шалгагддаг боловч хаяг үнэхээр хүлээн авагчийнх эсэх нь баталгаажихгүй.
+- **Хэрэглэгчийн бүртгэлтэй эсэх нь нэвтрэхэд ил гарна** (`PreventUserExistenceErrors: LEGACY`, дээр тайлбарласан).
 - **Frontend нь CDN-гүй.** CloudFront-ыг AWS шинэ account-д хориглосон (дээрх тайлбар) тул `web` Lambda-аас
   үйлчилнэ. Хариу бүр Lambda-аар дамждаг тул хол хэрэглэгчид удаан, "cold start" эхний хүсэлтийг ~сек удаашруулна;
   хариу 6 MB-аас (API Gateway-ийн хязгаар) хэтэрч болохгүй. Одоогийн build ~75 KB (gzip).

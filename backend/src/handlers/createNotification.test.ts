@@ -68,13 +68,13 @@ describe('createNotification: оролт', () => {
 describe('createNotification: амжилттай тохиолдол', () => {
   it('токений эзэмшигчтэй PENDING мөр хадгалж, зөвхөн id-г дараалалд тавиад 201 буцаана', async () => {
     const res = await create({
-      body: { recipient: '  bold@example.com ', channel: 'SMS', message: ' Hi ' },
+      body: { recipient: '  +97699112233 ', channel: 'SMS', message: ' Hi ' },
     });
 
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({
       userId: 'user-1',
-      recipient: 'bold@example.com',
+      recipient: '+97699112233',
       channel: 'SMS',
       message: 'Hi',
       status: 'PENDING',

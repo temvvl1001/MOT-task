@@ -117,6 +117,17 @@ describe('signIn ба signUp', () => {
     expect(loadSession()).toBeNull();
   });
 
+  it('бүртгэлгүй имэйлд "бүртгэл олдсонгүй" гэж, бүртгэлтэй имэйлийн буруу нууц үгэнд "буруу" гэж ялгаж хэлнэ', async () => {
+    fetchMock
+      .mockReturnValueOnce(reply(400, { __type: 'UserNotFoundException' }))
+      .mockReturnValueOnce(reply(400, { __type: 'NotAuthorizedException' }));
+
+    await expect(signIn('nobody@gmail.com', 'secret123')).rejects.toThrow(
+      'Энэ имэйлээр бүртгэл олдсонгүй. Бүртгүүлнэ үү.'
+    );
+    await expect(signIn('bold@gmail.com', 'wrong')).rejects.toThrow('Имэйл эсвэл нууц үг буруу байна.');
+  });
+
   it('сүлжээний алдааг унахгүйгээр ойлгомжтой мэдээлнэ', async () => {
     fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
 
@@ -127,6 +138,7 @@ describe('signIn ба signUp', () => {
 describe('authMessage', () => {
   it.each([
     ['NotAuthorizedException', 'Имэйл эсвэл нууц үг буруу байна.'],
+    ['UserNotFoundException', 'Энэ имэйлээр бүртгэл олдсонгүй. Бүртгүүлнэ үү.'],
     ['UsernameExistsException', 'Энэ имэйлээр бүртгэл аль хэдийн үүссэн байна. Нэвтэрнэ үү.'],
     ['InvalidPasswordException', t.auth.passwordHint],
   ])('%s-ийг монгол текст болгоно', (type, expected) => {

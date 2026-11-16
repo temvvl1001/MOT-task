@@ -220,6 +220,37 @@ await check('POST шалгалт: 400 ба тогтвортой алдааны �
   eq((await call(alice.token, 'POST', '/notifications', { body: { recipient: 'a@b.c', channel: 'EMAIL', message: 'x' }, headers: { 'Idempotency-Key': 'short' } })).body.code, 'invalid_idempotency_key', 'idempotency key');
 });
 
+await check('Хүлээн авагчийн хэлбэр: суваг тус бүрт имэйл, утас, төхөөрөмжийн ID шалгагдана', async () => {
+  const post = (channel, recipient) =>
+    call(alice.token, 'POST', '/notifications', { body: { recipient, channel, message: 'x' } });
+  eq((await post('EMAIL', 'asdf')).body.code, 'invalid_recipient_email', 'email without @');
+  eq((await post('EMAIL', 'bold@gmail')).body.code, 'invalid_recipient_email', 'email without a dot');
+  eq((await post('SMS', 'bold@gmail.com')).body.code, 'invalid_recipient_phone', 'email used as a phone number');
+  eq((await post('SMS', '12345')).body.code, 'invalid_recipient_phone', 'phone too short');
+  eq((await post('PUSH', 'two words')).body.code, 'invalid_recipient_device', 'device id with a space');
+  eq((await post('SMS', '+976 9911 2233')).status, 201, 'valid phone number');
+});
+
+await check('Нэвтрэлт: бүртгэлгүй имэйл ба буруу нууц үгийг ялгаж хэлнэ', async () => {
+  const signIn = async (email, password) => {
+    const res = await fetch(`https://cognito-idp.${REGION}.amazonaws.com/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-amz-json-1.1',
+        'X-Amz-Target': 'AWSCognitoIdentityProviderService.InitiateAuth',
+      },
+      body: JSON.stringify({
+        AuthFlow: 'USER_PASSWORD_AUTH',
+        ClientId: CLIENT_ID,
+        AuthParameters: { USERNAME: email, PASSWORD: password },
+      }),
+    });
+    return (await res.json()).__type;
+  };
+  eq(await signIn(`nobody-${randomUUID().slice(0, 8)}@example.com`, 'Passw0rdTest1'), 'UserNotFoundException', 'unknown email');
+  eq(await signIn(alice.email, 'WrongPassw0rd'), 'NotAuthorizedException', 'wrong password');
+});
+
 // ---- Processing scenarios (run in parallel, each takes up to ~30 s because of the backoff) ----
 const created = {};
 await Promise.all([

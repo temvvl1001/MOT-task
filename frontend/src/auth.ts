@@ -19,9 +19,12 @@ const REFRESH_MARGIN_MS = 60_000;
 
 export const authMessage = (type: string | undefined): string => {
   switch (type) {
-    case 'NotAuthorizedException':
+    // Cognito answers UserNotFoundException only because PreventUserExistenceErrors is LEGACY in
+    // serverless.yml. With the default (ENABLED) both cases would look like NotAuthorizedException.
     case 'UserNotFoundException':
-      return 'Имэйл эсвэл нууц үг буруу байна.';
+      return t.auth.notRegistered;
+    case 'NotAuthorizedException':
+      return t.auth.wrongCredentials;
     case 'UsernameExistsException':
       return 'Энэ имэйлээр бүртгэл аль хэдийн үүссэн байна. Нэвтэрнэ үү.';
     case 'InvalidPasswordException':
