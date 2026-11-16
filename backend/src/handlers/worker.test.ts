@@ -1,131 +1,273 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
-import type { SQSEvent } from 'aws-lambda';
+import type { SQSBatchResponse, SQSEvent } from 'aws-lambda';
+import { PermanentDeliveryError, TemporaryDeliveryError } from '../lib/errors';
 import type { Notification } from '../lib/types';
 
-vi.mock('../lib/clients', () => ({ ddb: { send: vi.fn() } }));
+vi.mock('../lib/clients', () => ({ ddb: { send: vi.fn() }, sqs: { send: vi.fn() } }));
 vi.mock('../lib/broadcast', () => ({ broadcastNotification: vi.fn() }));
 vi.mock('../lib/deliver', () => ({ deliver: vi.fn() }));
 
-import { ddb } from '../lib/clients';
+import { ddb, sqs } from '../lib/clients';
 import { broadcastNotification } from '../lib/broadcast';
 import { deliver } from '../lib/deliver';
 import { handler } from './worker';
 
-const send = ddb.send as unknown as Mock;
+const ddbSend = ddb.send as unknown as Mock;
+const sqsSend = sqs.send as unknown as Mock;
 const broadcast = broadcastNotification as unknown as Mock;
 const deliverMock = deliver as unknown as Mock;
 
-const item = (status: Notification['status'], result?: string): Notification => ({
+const item = (status: Notification['status'], extra: Partial<Notification> = {}): Notification => ({
   id: 'n1',
+  userId: 'user-1',
   recipient: 'bold@example.com',
   channel: 'EMAIL',
   message: 'Hello',
   status,
-  result,
+  attempts: 1,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
+  ...extra,
 });
 
 const conflict = () =>
   new ConditionalCheckFailedException({ message: 'conflict', $metadata: {} });
 
-const run = (...ids: string[]) => {
-  const event = {
-    Records: ids.map((id) => ({ body: JSON.stringify({ id }) })),
-  } as SQSEvent;
-  return handler(event, {} as never, () => undefined);
-};
+const record = (id = 'n1', receiveCount = 1) => ({
+  messageId: `m-${id}`,
+  receiptHandle: `rh-${id}`,
+  body: JSON.stringify({ id }),
+  attributes: { ApproximateReceiveCount: String(receiveCount) },
+});
 
-// The UpdateCommand input of the nth ddb.send call.
-const inputOf = (call: number) => send.mock.calls[call][0].input;
+const run = (...records: ReturnType<typeof record>[]) =>
+  handler({ Records: records } as unknown as SQSEvent, {} as never, () => undefined) as Promise<SQSBatchResponse>;
+
+const ddbInput = (call: number) => ddbSend.mock.calls[call][0].input;
+const pushedStatuses = () => broadcast.mock.calls.map(([n]) => n.status);
 
 beforeEach(() => {
   vi.resetAllMocks();
   vi.spyOn(console, 'log').mockImplementation(() => undefined);
+  vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  process.env.NOTIFICATIONS_TABLE = 'notifications-table';
+  process.env.QUEUE_URL = 'https://sqs.example/queue';
 });
 
-describe('worker', () => {
-  it('moves PENDING -> PROCESSING -> COMPLETED and broadcasts both changes', async () => {
-    send
+describe('worker: амжилттай хүргэлт', () => {
+  it('PENDING -> PROCESSING -> COMPLETED болгож, өөрчлөлт бүрийг эзэмшигчид push хийнэ', async () => {
+    ddbSend
       .mockResolvedValueOnce({ Attributes: item('PROCESSING') })
-      .mockResolvedValueOnce({ Attributes: item('COMPLETED', 'Delivered') });
-    deliverMock.mockResolvedValue('Delivered');
+      .mockResolvedValueOnce({ Attributes: item('COMPLETED', { result: 'Хүргэгдлээ' }) });
+    deliverMock.mockResolvedValue('Хүргэгдлээ');
 
-    await run('n1');
+    const res = await run(record());
 
-    expect(deliverMock).toHaveBeenCalledTimes(1);
-    expect(broadcast.mock.calls.map(([n]) => n.status)).toEqual(['PROCESSING', 'COMPLETED']);
-    expect(inputOf(1).ExpressionAttributeValues).toMatchObject({
+    expect(res.batchItemFailures).toEqual([]);
+    expect(pushedStatuses()).toEqual(['PROCESSING', 'COMPLETED']);
+    expect(ddbInput(1).ExpressionAttributeValues).toMatchObject({
       ':s': 'COMPLETED',
-      ':r': 'Delivered',
+      ':r': 'Хүргэгдлээ',
     });
   });
 
-  it('records FAILED with the error message when delivery is rejected', async () => {
-    send
+  it('SQS-ийн хүлээн авсан тоог оролдлогын дугаар болгон хүргэлтэд дамжуулна', async () => {
+    ddbSend
       .mockResolvedValueOnce({ Attributes: item('PROCESSING') })
-      .mockResolvedValueOnce({ Attributes: item('FAILED', 'rejected') });
-    deliverMock.mockRejectedValue(new Error('rejected'));
+      .mockResolvedValueOnce({ Attributes: item('COMPLETED') });
+    deliverMock.mockResolvedValue('ok');
 
-    await run('n1');
+    await run(record('n1', 2));
 
-    expect(inputOf(1).ExpressionAttributeValues).toMatchObject({
+    expect(deliverMock).toHaveBeenCalledWith(expect.objectContaining({ id: 'n1' }), 2);
+    expect(ddbInput(0).ExpressionAttributeValues[':attempt']).toBe(2);
+  });
+});
+
+describe('worker: байнгын алдаа', () => {
+  it('шууд FAILED болгож, дахин оролдохгүй', async () => {
+    ddbSend
+      .mockResolvedValueOnce({ Attributes: item('PROCESSING') })
+      .mockResolvedValueOnce({ Attributes: item('FAILED', { result: 'татгалзсан' }) });
+    deliverMock.mockRejectedValue(new PermanentDeliveryError('татгалзсан'));
+
+    const res = await run(record());
+
+    expect(res.batchItemFailures).toEqual([]);
+    expect(ddbSend).toHaveBeenCalledTimes(2);
+    expect(ddbInput(1).ExpressionAttributeValues).toMatchObject({
       ':s': 'FAILED',
-      ':r': 'rejected',
+      ':r': 'татгалзсан',
     });
-    expect(broadcast.mock.calls.map(([n]) => n.status)).toEqual(['PROCESSING', 'FAILED']);
+    expect(pushedStatuses()).toEqual(['PROCESSING', 'FAILED']);
+    expect(sqsSend).not.toHaveBeenCalled();
+  });
+});
+
+describe('worker: түр зуурын алдаа', () => {
+  it('мөрийг PENDING рүү буцааж, SQS-д backoff-той дахин хүргүүлэхийг хүснэ', async () => {
+    ddbSend
+      .mockResolvedValueOnce({ Attributes: item('PROCESSING') })
+      .mockResolvedValueOnce({ Attributes: item('PENDING') });
+    deliverMock.mockRejectedValue(new TemporaryDeliveryError('Үйлчилгээ унасан'));
+
+    const res = await run(record('n1', 1));
+
+    expect(res.batchItemFailures).toEqual([{ itemIdentifier: 'm-n1' }]);
+    expect(ddbInput(1).ExpressionAttributeValues[':pending']).toBe('PENDING');
+    expect(ddbInput(1).ExpressionAttributeValues[':r']).toBe(
+      '1/3-р оролдлого амжилтгүй: Үйлчилгээ унасан. Дахин оролдоно.'
+    );
+    expect(pushedStatuses()).toEqual(['PROCESSING', 'PENDING']);
+    expect(sqsSend.mock.calls[0][0].input).toMatchObject({
+      QueueUrl: 'https://sqs.example/queue',
+      ReceiptHandle: 'rh-n1',
+      VisibilityTimeout: 5,
+    });
   });
 
-  it('claims atomically: only from PENDING, or from a stale PROCESSING lease', async () => {
-    send.mockRejectedValueOnce(conflict());
+  it('оролдлого бүрт backoff-ыг хоёр дахин нэмнэ', async () => {
+    ddbSend
+      .mockResolvedValueOnce({ Attributes: item('PROCESSING') })
+      .mockResolvedValueOnce({ Attributes: item('PENDING') });
+    deliverMock.mockRejectedValue(new TemporaryDeliveryError('down'));
 
-    await run('n1');
+    await run(record('n1', 2));
 
-    const claim = inputOf(0);
+    expect(sqsSend.mock.calls[0][0].input.VisibilityTimeout).toBe(10);
+  });
+
+  it('оролдлого дуусвал FAILED болгож бууж өгнө', async () => {
+    ddbSend
+      .mockResolvedValueOnce({ Attributes: item('PROCESSING') })
+      .mockResolvedValueOnce({ Attributes: item('FAILED') });
+    deliverMock.mockRejectedValue(new TemporaryDeliveryError('Үйлчилгээ унасан'));
+
+    const res = await run(record('n1', 3));
+
+    expect(res.batchItemFailures).toEqual([]);
+    expect(ddbInput(1).ExpressionAttributeValues).toMatchObject({
+      ':s': 'FAILED',
+      ':r': '3 оролдлогын дараа бууж өгөв: Үйлчилгээ унасан',
+    });
+    expect(sqsSend).not.toHaveBeenCalled();
+  });
+
+  it('ангилаагүй алдааг түр зуурын гэж үзнэ', async () => {
+    ddbSend
+      .mockResolvedValueOnce({ Attributes: item('PROCESSING') })
+      .mockResolvedValueOnce({ Attributes: item('PENDING') });
+    deliverMock.mockRejectedValue(new Error('socket hang up'));
+
+    const res = await run(record());
+
+    expect(res.batchItemFailures).toHaveLength(1);
+    expect(ddbInput(1).ExpressionAttributeValues[':pending']).toBe('PENDING');
+  });
+
+  it('visibility timeout-ыг богиносгож чадаагүй ч алдааг зөв мэдээлнэ', async () => {
+    ddbSend
+      .mockResolvedValueOnce({ Attributes: item('PROCESSING') })
+      .mockResolvedValueOnce({ Attributes: item('PENDING') });
+    deliverMock.mockRejectedValue(new TemporaryDeliveryError('down'));
+    sqsSend.mockRejectedValue(new Error('SQS unavailable'));
+
+    const res = await run(record());
+
+    expect(res.batchItemFailures).toEqual([{ itemIdentifier: 'm-n1' }]);
+  });
+});
+
+describe('worker: давхар хүргэлт ба зэрэгцээ ажиллагаа', () => {
+  it('claim хийхдээ атомик: зөвхөн PENDING, эсвэл хуучирсан PROCESSING lease-ээс', async () => {
+    ddbSend.mockRejectedValueOnce(conflict());
+
+    await run(record());
+
+    const claim = ddbInput(0);
     expect(claim.ConditionExpression).toContain('#s = :pending');
     expect(claim.ConditionExpression).toContain('updatedAt < :staleBefore');
     expect(claim.ExpressionAttributeValues[':pending']).toBe('PENDING');
   });
 
-  it('skips a notification that is missing, finished or being processed elsewhere', async () => {
-    send.mockRejectedValueOnce(conflict());
+  it('байхгүй, дууссан, эсвэл өөр worker-ийн авсан мөрийг алгасна', async () => {
+    ddbSend.mockRejectedValueOnce(conflict());
 
-    await run('n1');
+    const res = await run(record());
 
-    expect(send).toHaveBeenCalledTimes(1);
+    expect(res.batchItemFailures).toEqual([]);
+    expect(ddbSend).toHaveBeenCalledTimes(1);
     expect(deliverMock).not.toHaveBeenCalled();
     expect(broadcast).not.toHaveBeenCalled();
   });
 
-  it('does not broadcast a result when another worker already finished the item', async () => {
-    send.mockResolvedValueOnce({ Attributes: item('PROCESSING') }).mockRejectedValueOnce(conflict());
-    deliverMock.mockResolvedValue('Delivered');
-
-    await run('n1');
-
-    expect(broadcast).toHaveBeenCalledTimes(1);
-    expect(broadcast.mock.calls[0][0].status).toBe('PROCESSING');
-  });
-
-  it('rethrows unexpected errors so SQS retries the message', async () => {
-    send.mockRejectedValueOnce(new Error('DynamoDB unavailable'));
-
-    await expect(run('n1')).rejects.toThrow('DynamoDB unavailable');
-    expect(deliverMock).not.toHaveBeenCalled();
-  });
-
-  it('processes every record in a batch', async () => {
-    send
+  it('давхардсан message-ийг зөвхөн нэг удаа хүргэнэ', async () => {
+    ddbSend
       .mockResolvedValueOnce({ Attributes: item('PROCESSING') })
       .mockResolvedValueOnce({ Attributes: item('COMPLETED') })
+      .mockRejectedValueOnce(conflict());
+    deliverMock.mockResolvedValue('ok');
+
+    await run(record(), record());
+
+    expect(deliverMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('өөр worker аль хэдийн дуусгасан бол үр дүнг push хийхгүй', async () => {
+    ddbSend.mockResolvedValueOnce({ Attributes: item('PROCESSING') }).mockRejectedValueOnce(conflict());
+    deliverMock.mockResolvedValue('ok');
+
+    await run(record());
+
+    expect(pushedStatuses()).toEqual(['PROCESSING']);
+  });
+});
+
+describe('worker: алдаа ба batch', () => {
+  it('DynamoDB унавал record-ыг backoff-той дахин оролдоно', async () => {
+    ddbSend.mockRejectedValueOnce(new Error('DynamoDB unavailable'));
+
+    const res = await run(record());
+
+    expect(res.batchItemFailures).toEqual([{ itemIdentifier: 'm-n1' }]);
+    expect(deliverMock).not.toHaveBeenCalled();
+    expect(sqsSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('уншигдахгүй message-ийг DLQ руу явахаар үлдээнэ', async () => {
+    const res = await run({ ...record(), body: 'not json' });
+
+    expect(res.batchItemFailures).toEqual([{ itemIdentifier: 'm-n1' }]);
+    expect(ddbSend).not.toHaveBeenCalled();
+  });
+
+  it('алдаатай нэг record batch-ийн бусдад нөлөөлөхгүй', async () => {
+    ddbSend
+      .mockResolvedValueOnce({ Attributes: item('PROCESSING', { id: 'a' }) })
+      .mockResolvedValueOnce({ Attributes: item('PENDING', { id: 'a' }) })
+      .mockResolvedValueOnce({ Attributes: item('PROCESSING', { id: 'b' }) })
+      .mockResolvedValueOnce({ Attributes: item('COMPLETED', { id: 'b' }) });
+    deliverMock
+      .mockRejectedValueOnce(new TemporaryDeliveryError('down'))
+      .mockResolvedValueOnce('ok');
+
+    const res = await run(record('a'), record('b'));
+
+    expect(res.batchItemFailures).toEqual([{ itemIdentifier: 'm-a' }]);
+    expect(deliverMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('push амжилтгүй болсон нь хадгалагдсан ажлыг буцаахгүй', async () => {
+    ddbSend
       .mockResolvedValueOnce({ Attributes: item('PROCESSING') })
       .mockResolvedValueOnce({ Attributes: item('COMPLETED') });
-    deliverMock.mockResolvedValue('Delivered');
+    deliverMock.mockResolvedValue('ok');
+    broadcast.mockRejectedValue(new Error('push failed'));
 
-    await run('n1', 'n2');
+    const res = await run(record());
 
-    expect(deliverMock).toHaveBeenCalledTimes(2);
-    expect(send).toHaveBeenCalledTimes(4);
+    expect(res.batchItemFailures).toEqual([]);
+    expect(ddbSend).toHaveBeenCalledTimes(2);
   });
 });

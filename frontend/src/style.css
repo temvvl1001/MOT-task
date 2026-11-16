@@ -24,7 +24,7 @@ body {
     var(--bg);
 }
 
-#app { max-width: 680px; margin: 0 auto; padding: 2.5rem 1rem 4rem; }
+#root { max-width: 680px; margin: 0 auto; padding: 2.5rem 1rem 4rem; }
 
 header {
   display: flex;
@@ -49,7 +49,7 @@ h2 {
 .conn.closed { background: rgba(239, 68, 68, 0.12); color: #fca5a5; border-color: rgba(239, 68, 68, 0.3); }
 
 /* form */
-form {
+.card-form {
   display: grid;
   gap: 1rem;
   padding: 1.5rem;
@@ -133,3 +133,19 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .chip:hover:not(:disabled) { background: rgba(255, 255, 255, 0.06); color: var(--text); }
 .chip.active { color: #fff; background: var(--accent); border-color: var(--accent); }
 .chip.active:hover:not(:disabled) { background: var(--accent-hover); }
+/* auth, account line, hints */
+.form-title { margin: 0; font-size: 1.1rem; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--text); }
+.account { margin: -0.75rem 0 1.25rem; font-size: 0.85rem; color: var(--muted); }
+.hint { margin: -0.4rem 0 0; font-size: 0.75rem; color: var(--muted); }
+code { padding: 0.05rem 0.3rem; font-size: 0.9em; background: rgba(255, 255, 255, 0.08); border-radius: 6px; }
+.link-button {
+  padding: 0;
+  font-size: inherit;
+  font-weight: 600;
+  color: var(--accent);
+  background: none;
+}
+.link-button:hover:not(:disabled) { background: none; text-decoration: underline; }
+.load-more { display: block; margin: 1rem auto 0; }
+h2 { margin-top: 2rem; }
+.card-form h2 { margin-top: 0; }

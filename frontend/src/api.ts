@@ -1,29 +1,60 @@
-import type { CreateNotificationInput, Notification } from './types';
+import { AuthError, getValidSession } from './auth';
+import { config } from './config';
+import { errorText, t } from './i18n';
+import type { CreateNotificationInput, Notification, NotificationPage } from './types';
 
-const API_URL = import.meta.env.VITE_API_URL as string;
+export class ApiError extends Error {
+  readonly status: number;
+  readonly code?: string;
+  constructor(status: number, message: string, code?: string) {
+    super(message);
+    this.status = status;
+    this.code = code;
+  }
+}
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+const request = async <T>(
+  path: string,
+  init: { method?: string; body?: unknown; headers?: Record<string, string> } = {}
+): Promise<{ status: number; data: T }> => {
+  const { idToken } = await getValidSession();
+
   let res: Response;
   try {
-    res = await fetch(`${API_URL}${path}`, {
-      ...init,
-      headers: { 'Content-Type': 'application/json' },
+    res = await fetch(`${config.apiUrl}${path}`, {
+      method: init.method ?? 'GET',
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        ...init.headers,
+      },
+      body: init.body === undefined ? undefined : JSON.stringify(init.body),
     });
   } catch {
-    throw new Error('Network error. Could not reach the server.');
+    throw new ApiError(0, t.errors.network);
   }
 
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(data.error ?? `Request failed (${res.status})`);
-  }
-  return data as T;
-}
+  if (res.status === 401) throw new AuthError(t.errors.sessionExpired);
+  // The API names the problem with a `code`; the text for the user comes from i18n.
+  if (!res.ok) throw new ApiError(res.status, errorText(data.code) ?? t.errors.generic, data.code);
+  return { status: res.status, data: data as T };
+};
 
-export const createNotification = (input: CreateNotificationInput) =>
-  request<Notification>('/notifications', {
+export const listNotifications = async (nextToken?: string, limit = 20) => {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (nextToken) query.set('nextToken', nextToken);
+  return (await request<NotificationPage>(`/notifications?${query}`)).data;
+};
+
+// The idempotency key makes a retried request safe: the server returns the original
+// notification instead of creating a second one.
+export const createNotification = async (input: CreateNotificationInput, idempotencyKey: string) => {
+  const { status, data } = await request<Notification>('/notifications', {
     method: 'POST',
-    body: JSON.stringify(input),
+    body: input,
+    headers: { 'Idempotency-Key': idempotencyKey },
   });
-
-export const listNotifications = () => request<Notification[]>('/notifications');
+  // 202: saved, but queueing was delayed. The server will queue it shortly.
+  return { notification: data, delayed: status === 202 };
+};

@@ -3,38 +3,53 @@ import { MAX_MESSAGE_LENGTH, validateCreateInput } from './validate';
 
 const valid = { recipient: 'bold@example.com', channel: 'EMAIL', message: 'Hello' };
 
-describe('validateCreateInput', () => {
-  it('accepts a valid body', () => {
+describe('validateCreateInput: хүсэлтийн шалгалт', () => {
+  it('зөв хүсэлтийг хүлээн авна', () => {
     expect(validateCreateInput(valid)).toBeNull();
   });
 
-  it.each(['EMAIL', 'SMS', 'PUSH'])('accepts channel %s', (channel) => {
+  it.each(['EMAIL', 'SMS', 'PUSH'])('%s сувгийг хүлээн авна', (channel) => {
     expect(validateCreateInput({ ...valid, channel })).toBeNull();
   });
 
-  it.each([null, undefined, 'text', 42])('rejects a non-object body (%s)', (body) => {
-    expect(validateCreateInput(body)).toBe('Request body must be a JSON object');
+  it.each([null, undefined, 'text', 42])('объект биш body-г татгалзана (%s)', (body) => {
+    expect(validateCreateInput(body)).toEqual({
+      code: 'invalid_body',
+      error: 'Request body must be a JSON object',
+    });
   });
 
-  it.each(['', '   ', undefined, 123])('rejects an invalid recipient (%j)', (recipient) => {
-    expect(validateCreateInput({ ...valid, recipient })).toBe('recipient is required');
+  it.each(['', '   ', undefined, 123])('буруу recipient-г татгалзана (%j)', (recipient) => {
+    expect(validateCreateInput({ ...valid, recipient })).toEqual({
+      code: 'recipient_required',
+      error: 'recipient is required',
+    });
   });
 
-  it.each(['FAX', 'email', '', undefined])('rejects an invalid channel (%j)', (channel) => {
-    expect(validateCreateInput({ ...valid, channel })).toMatch(/channel must be one of/);
+  it.each(['FAX', 'email', '', undefined])('буруу channel-г татгалзана (%j)', (channel) => {
+    expect(validateCreateInput({ ...valid, channel })).toMatchObject({ code: 'invalid_channel' });
   });
 
-  it.each(['', '   ', undefined, 123])('rejects an invalid message (%j)', (message) => {
-    expect(validateCreateInput({ ...valid, message })).toBe('message is required');
+  it.each(['', '   ', undefined, 123])('буруу message-г татгалзана (%j)', (message) => {
+    expect(validateCreateInput({ ...valid, message })).toEqual({
+      code: 'message_required',
+      error: 'message is required',
+    });
   });
 
-  it('accepts a message of exactly the maximum length', () => {
+  it('яг дээд урттай message-г хүлээн авна', () => {
     const message = 'a'.repeat(MAX_MESSAGE_LENGTH);
     expect(validateCreateInput({ ...valid, message })).toBeNull();
   });
 
-  it('rejects a message over the maximum length', () => {
+  it('дээд уртаас нэг тэмдэгт урт message-г татгалзана', () => {
     const message = 'a'.repeat(MAX_MESSAGE_LENGTH + 1);
-    expect(validateCreateInput({ ...valid, message })).toMatch(/characters or less/);
+    expect(validateCreateInput({ ...valid, message })).toMatchObject({ code: 'message_too_long' });
+  });
+
+  it('эхний олдсон алдааг л буцаана', () => {
+    expect(validateCreateInput({ recipient: '', channel: 'FAX', message: '' })).toMatchObject({
+      code: 'recipient_required',
+    });
   });
 });

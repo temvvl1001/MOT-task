@@ -24,11 +24,13 @@ const post = postSend as unknown as Mock;
 
 const notification: Notification = {
   id: 'n1',
+  userId: 'user-1',
   recipient: 'bold@example.com',
   channel: 'EMAIL',
   message: 'Hello',
   status: 'COMPLETED',
-  result: 'Delivered',
+  result: 'Хүргэгдлээ',
+  attempts: 1,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:01.000Z',
 };
@@ -45,21 +47,42 @@ beforeEach(() => {
 });
 
 describe('broadcastNotification', () => {
-  it('pushes a NOTIFICATION_UPDATED message to every connection', async () => {
+  it('эзэмшигчийн холболтуудыг byUser индексээр л хайна', async () => {
+    connections();
+
+    await broadcastNotification(notification);
+
+    expect(ddbSend.mock.calls[0][0].input).toMatchObject({
+      TableName: 'connections-table',
+      IndexName: 'byUser',
+      KeyConditionExpression: 'userId = :userId',
+      ExpressionAttributeValues: { ':userId': 'user-1' },
+    });
+  });
+
+  it('тэдгээр холболт бүрт NOTIFICATION_UPDATED message илгээнэ', async () => {
     connections('a', 'b');
 
     await broadcastNotification(notification);
 
     expect(pushedTo()).toEqual(['a', 'b']);
     for (const [command] of post.mock.calls) {
-      expect(JSON.parse(command.input.Data)).toEqual({
-        type: 'NOTIFICATION_UPDATED',
-        notification,
-      });
+      expect(JSON.parse(command.input.Data)).toEqual({ type: 'NOTIFICATION_UPDATED', notification });
     }
   });
 
-  it('does nothing when nobody is connected', async () => {
+  it('холболтуудын бүх хуудсыг уншина', async () => {
+    ddbSend
+      .mockResolvedValueOnce({ Items: [{ connectionId: 'a' }], LastEvaluatedKey: { connectionId: 'a' } })
+      .mockResolvedValueOnce({ Items: [{ connectionId: 'b' }] });
+
+    await broadcastNotification(notification);
+
+    expect(ddbSend.mock.calls[1][0].input.ExclusiveStartKey).toEqual({ connectionId: 'a' });
+    expect(pushedTo()).toEqual(['a', 'b']);
+  });
+
+  it('эзэмшигчид нээлттэй холболт байхгүй бол юу ч хийхгүй', async () => {
     connections();
 
     await broadcastNotification(notification);
@@ -67,7 +90,7 @@ describe('broadcastNotification', () => {
     expect(post).not.toHaveBeenCalled();
   });
 
-  it('removes a connection that is gone (GoneException)', async () => {
+  it('салсан холболтыг (GoneException) устгана', async () => {
     connections('a', 'b');
     post.mockImplementation(async (command) => {
       if (command.input.ConnectionId === 'a') {
@@ -82,7 +105,7 @@ describe('broadcastNotification', () => {
     expect(pushedTo()).toEqual(['a', 'b']);
   });
 
-  it('removes a connection that answers HTTP 410', async () => {
+  it('HTTP 410 хариулсан холболтыг устгана', async () => {
     connections('a');
     post.mockRejectedValueOnce(Object.assign(new Error('gone'), { $metadata: { httpStatusCode: 410 } }));
 
@@ -91,7 +114,7 @@ describe('broadcastNotification', () => {
     expect(ddbSend.mock.calls[1][0].input.Key).toEqual({ connectionId: 'a' });
   });
 
-  it('keeps going and keeps the connection when a push fails for another reason', async () => {
+  it('өөр шалтгаанаар push унавал үлдсэнийг үргэлжлүүлж, холболтыг устгахгүй', async () => {
     connections('a', 'b');
     post.mockImplementation(async (command) => {
       if (command.input.ConnectionId === 'a') throw new Error('throttled');

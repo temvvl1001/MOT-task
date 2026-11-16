@@ -1,88 +1,102 @@
-import { SQSHandler } from 'aws-lambda';
-import { UpdateCommand, UpdateCommandInput } from '@aws-sdk/lib-dynamodb';
-import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
-import { ddb } from '../lib/clients';
-import { broadcastNotification } from '../lib/broadcast';
+import { SQSBatchResponse, SQSHandler, SQSRecord } from 'aws-lambda';
+import { ChangeMessageVisibilityCommand } from '@aws-sdk/client-sqs';
+import { sqs } from '../lib/clients';
+import { MAX_ATTEMPTS, retryDelaySeconds } from '../lib/config';
 import { deliver } from '../lib/deliver';
-import { Notification } from '../lib/types';
+import { PermanentDeliveryError } from '../lib/errors';
+import { claim, finish, release } from '../lib/notificationStore';
+import { notify } from '../lib/notify';
+import { parseId } from '../lib/queueMessage';
 
-const TableName = process.env.NOTIFICATIONS_TABLE;
+type Outcome = 'done' | 'retry';
 
-// The worker Lambda times out after 30s. A PROCESSING item that has not been
-// touched for longer than this is treated as abandoned and may be claimed again.
-export const LEASE_MS = 60_000;
+const receiveCount = (record: SQSRecord) =>
+  Number(record.attributes?.ApproximateReceiveCount ?? '1');
 
-// Runs an UpdateItem whose condition is allowed to fail.
-// Returns null when the condition fails: another worker owns the item.
-const conditionalUpdate = async (
-  input: Omit<UpdateCommandInput, 'TableName' | 'ReturnValues'>
-): Promise<Notification | null> => {
+// Ask SQS to redeliver the message after a backoff instead of waiting out the long default
+// visibility timeout. If this fails the default timeout still applies, so it is best effort.
+const scheduleRetry = async (record: SQSRecord, attempt: number) => {
   try {
-    const { Attributes } = await ddb.send(
-      new UpdateCommand({ TableName, ReturnValues: 'ALL_NEW', ...input })
+    await sqs.send(
+      new ChangeMessageVisibilityCommand({
+        QueueUrl: process.env.QUEUE_URL,
+        ReceiptHandle: record.receiptHandle,
+        VisibilityTimeout: retryDelaySeconds(attempt),
+      })
     );
-    return Attributes as Notification;
   } catch (err) {
-    if (err instanceof ConditionalCheckFailedException) return null;
-    throw err;
+    console.error('Could not shorten the visibility timeout', err);
   }
 };
 
-// PENDING -> PROCESSING, atomically. Also succeeds for a stale PROCESSING item
-// (the previous worker crashed). Fails for missing, finished or in-flight items.
-const claim = (id: string) => {
-  const now = Date.now();
-  return conditionalUpdate({
-    Key: { id },
-    UpdateExpression: 'SET #s = :processing, updatedAt = :now',
-    ConditionExpression: '#s = :pending OR (#s = :processing AND updatedAt < :staleBefore)',
-    ExpressionAttributeNames: { '#s': 'status' },
-    ExpressionAttributeValues: {
-      ':pending': 'PENDING',
-      ':processing': 'PROCESSING',
-      ':now': new Date(now).toISOString(),
-      ':staleBefore': new Date(now - LEASE_MS).toISOString(),
-    },
-  });
+const processRecord = async (record: SQSRecord): Promise<Outcome> => {
+  const attempt = receiveCount(record);
+  const id = parseId(record.body);
+  if (!id) {
+    // Cannot be processed by anyone. Let SQS retry and finally park it in the DLQ.
+    console.error(`Unreadable message ${record.messageId}`);
+    return 'retry';
+  }
+
+  // Atomic PENDING -> PROCESSING. Missing, finished or in-flight items are skipped, which is
+  // what makes duplicate deliveries harmless.
+  const claimed = await claim(id, attempt);
+  if (!claimed) {
+    console.log(`Notification ${id} is missing, finished or in progress, skipping`);
+    return 'done';
+  }
+  await notify(claimed);
+
+  let result: string;
+  try {
+    result = await deliver(claimed, attempt);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : 'Unknown error';
+
+    // Permanent: retrying cannot help.
+    if (err instanceof PermanentDeliveryError) {
+      const failed = await finish(id, 'FAILED', reason);
+      if (failed) await notify(failed);
+      return 'done';
+    }
+
+    // Temporary (or unexpected): out of attempts means FAILED, otherwise try again later.
+    if (attempt >= MAX_ATTEMPTS) {
+      const failed = await finish(id, 'FAILED', `${attempt} оролдлогын дараа бууж өгөв: ${reason}`);
+      if (failed) await notify(failed);
+      return 'done';
+    }
+    const released = await release(
+      id,
+      `${attempt}/${MAX_ATTEMPTS}-р оролдлого амжилтгүй: ${reason}. Дахин оролдоно.`
+    );
+    if (released) await notify(released);
+    await scheduleRetry(record, attempt);
+    return 'retry';
+  }
+
+  const completed = await finish(id, 'COMPLETED', result);
+  if (completed) await notify(completed);
+  return 'done';
 };
 
-// PROCESSING -> COMPLETED | FAILED, atomically.
-const finish = (id: string, status: 'COMPLETED' | 'FAILED', result: string) =>
-  conditionalUpdate({
-    Key: { id },
-    UpdateExpression: 'SET #s = :s, #r = :r, updatedAt = :now',
-    ConditionExpression: '#s = :processing',
-    ExpressionAttributeNames: { '#s': 'status', '#r': 'result' },
-    ExpressionAttributeValues: {
-      ':s': status,
-      ':r': result,
-      ':processing': 'PROCESSING',
-      ':now': new Date().toISOString(),
-    },
-  });
+// Partial batch response: only the records that need another try go back to the queue, so one
+// failing record never causes the others in the batch to be delivered again.
+export const handler: SQSHandler = async (event): Promise<SQSBatchResponse> => {
+  const batchItemFailures: SQSBatchResponse['batchItemFailures'] = [];
 
-export const handler: SQSHandler = async (event) => {
   for (const record of event.Records) {
-    const { id } = JSON.parse(record.body) as { id: string };
-
-    const claimed = await claim(id);
-    if (!claimed) {
-      console.log(`Notification ${id} is missing, finished or in progress, skipping`);
-      continue;
-    }
-    await broadcastNotification(claimed);
-
-    let status: 'COMPLETED' | 'FAILED';
-    let result: string;
     try {
-      result = await deliver(claimed);
-      status = 'COMPLETED';
+      if ((await processRecord(record)) === 'retry') {
+        batchItemFailures.push({ itemIdentifier: record.messageId });
+      }
     } catch (err) {
-      result = err instanceof Error ? err.message : 'Unknown error';
-      status = 'FAILED';
+      // Infrastructure error (DynamoDB throttling, network ...): retry with backoff.
+      console.error(`Processing ${record.messageId} failed`, err);
+      await scheduleRetry(record, receiveCount(record));
+      batchItemFailures.push({ itemIdentifier: record.messageId });
     }
-
-    const finished = await finish(id, status, result);
-    if (finished) await broadcastNotification(finished);
   }
+
+  return { batchItemFailures };
 };

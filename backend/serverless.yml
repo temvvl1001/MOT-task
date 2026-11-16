@@ -3,26 +3,60 @@ frameworkVersion: '3'
 
 plugins:
   - serverless-esbuild
+  - serverless-iam-roles-per-function
 
 custom:
   esbuild:
     bundle: true
     minify: false
-    target: node20
+    target: node22
+  # One number for both the queue's redrive policy and the worker's retry logic.
+  maxAttempts: 3
+  # Origin allowed to call the API from a browser. The app is served from the API's own origin
+  # (the web function), which needs no CORS; CORS_ORIGIN adds a frontend hosted elsewhere (Vercel).
+  # Default: this stack's own URL once it exists (read from its HttpApiUrl output), else any origin.
+  corsOrigin: ${env:CORS_ORIGIN, cf:notification-system-${self:provider.stage}.HttpApiUrl, '*'}
+  serverless-iam-roles-per-function:
+    # Every function gets only the statements listed under its own iamRoleStatements.
+    defaultInherit: false
 
 provider:
   name: aws
-  runtime: nodejs20.x
+  runtime: nodejs22.x
   memorySize: 256
   region: ap-southeast-2
   stage: ${opt:stage, 'dev'}
   httpApi:
-    cors: true
+    cors:
+      allowedOrigins:
+        - ${self:custom.corsOrigin}
+        - http://localhost:5173
+      allowedHeaders:
+        - Content-Type
+        - Authorization
+        - Idempotency-Key
+      allowedMethods:
+        - GET
+        - POST
+        - OPTIONS
+      maxAge: 3600
+    authorizers:
+      cognitoJwt:
+        type: jwt
+        identitySource: $request.header.Authorization
+        issuerUrl:
+          Fn::Join:
+            - ''
+            - - 'https://cognito-idp.${self:provider.region}.amazonaws.com/'
+              - Ref: UserPool
+        audience:
+          - Ref: UserPoolClient
   websocketsApiName: ${self:service}-${self:provider.stage}-ws
   websocketsApiRouteSelectionExpression: $request.body.action
   environment:
     NOTIFICATIONS_TABLE: ${self:service}-${self:provider.stage}-notifications
     CONNECTIONS_TABLE: ${self:service}-${self:provider.stage}-connections
+    MAX_ATTEMPTS: ${self:custom.maxAttempts}
     QUEUE_URL:
       Ref: NotificationQueue
     WS_ENDPOINT:
@@ -31,37 +65,46 @@ provider:
         - - 'https://'
           - Ref: WebsocketsApi
           - '.execute-api.${self:provider.region}.amazonaws.com/${self:provider.stage}'
-  iam:
-    role:
-      statements:
-        - Effect: Allow
-          Action:
-            - dynamodb:PutItem
-            - dynamodb:GetItem
-            - dynamodb:UpdateItem
-            - dynamodb:DeleteItem
-            - dynamodb:Scan
-          Resource:
-            - Fn::GetAtt: [NotificationsTable, Arn]
-            - Fn::GetAtt: [ConnectionsTable, Arn]
-        - Effect: Allow
-          Action:
-            - sqs:SendMessage
-          Resource:
-            Fn::GetAtt: [NotificationQueue, Arn]
-        - Effect: Allow
-          Action:
-            - execute-api:ManageConnections
-          Resource:
-            - arn:aws:execute-api:${self:provider.region}:*:*/${self:provider.stage}/POST/@connections/*
+
+# The built frontend (backend/web, produced by scripts/deploy-frontend.sh) ships with the functions.
+package:
+  patterns:
+    - web/**
 
 functions:
+  # Serves the React app on GET / and every other unmatched GET. The explicit /notifications routes
+  # are more specific, so they keep winning.
+  web:
+    handler: src/handlers/web.handler
+    iamRoleStatements: []
+    events:
+      - httpApi:
+          path: /
+          method: GET
+      - httpApi:
+          path: /{proxy+}
+          method: GET
+
   createNotification:
     handler: src/handlers/createNotification.handler
     events:
       - httpApi:
           path: /notifications
           method: post
+          authorizer:
+            name: cognitoJwt
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:PutItem
+          - dynamodb:GetItem
+        Resource:
+          - Fn::GetAtt: [NotificationsTable, Arn]
+      - Effect: Allow
+        Action:
+          - sqs:SendMessage
+        Resource:
+          - Fn::GetAtt: [NotificationQueue, Arn]
 
   listNotifications:
     handler: src/handlers/listNotifications.handler
@@ -69,41 +112,257 @@ functions:
       - httpApi:
           path: /notifications
           method: get
+          authorizer:
+            name: cognitoJwt
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:Query
+        Resource:
+          - Fn::Join:
+              - '/'
+              - - Fn::GetAtt: [NotificationsTable, Arn]
+                - index
+                - byUser
 
   worker:
     handler: src/handlers/worker.handler
-    timeout: 30
+    timeout: 60
     events:
       - sqs:
           arn:
             Fn::GetAtt: [NotificationQueue, Arn]
-          batchSize: 1
+          batchSize: 5
+          # Only the records that failed go back to the queue, not the whole batch.
+          functionResponseType: ReportBatchItemFailures
+          # Never more than 5 workers at once: protects DynamoDB and the WebSocket API from a burst.
+          maximumConcurrency: 5
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:UpdateItem
+        Resource:
+          - Fn::GetAtt: [NotificationsTable, Arn]
+      - Effect: Allow
+        Action:
+          - dynamodb:Query
+        Resource:
+          - Fn::Join:
+              - '/'
+              - - Fn::GetAtt: [ConnectionsTable, Arn]
+                - index
+                - byUser
+      - Effect: Allow
+        Action:
+          - dynamodb:DeleteItem
+        Resource:
+          - Fn::GetAtt: [ConnectionsTable, Arn]
+      - Effect: Allow
+        Action:
+          - sqs:ReceiveMessage
+          - sqs:DeleteMessage
+          - sqs:GetQueueAttributes
+          - sqs:ChangeMessageVisibility
+        Resource:
+          - Fn::GetAtt: [NotificationQueue, Arn]
+      - Effect: Allow
+        Action:
+          - execute-api:ManageConnections
+        Resource:
+          - Fn::Join:
+              - ''
+              - - 'arn:aws:execute-api:${self:provider.region}:'
+                - Ref: AWS::AccountId
+                - ':'
+                - Ref: WebsocketsApi
+                - '/${self:provider.stage}/POST/@connections/*'
+
+  # Finishes notifications whose message ended up in the dead-letter queue.
+  dlqProcessor:
+    handler: src/handlers/dlqProcessor.handler
+    timeout: 30
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt: [NotificationDLQ, Arn]
+          batchSize: 5
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:UpdateItem
+        Resource:
+          - Fn::GetAtt: [NotificationsTable, Arn]
+      - Effect: Allow
+        Action:
+          - dynamodb:Query
+        Resource:
+          - Fn::Join:
+              - '/'
+              - - Fn::GetAtt: [ConnectionsTable, Arn]
+                - index
+                - byUser
+      - Effect: Allow
+        Action:
+          - dynamodb:DeleteItem
+        Resource:
+          - Fn::GetAtt: [ConnectionsTable, Arn]
+      - Effect: Allow
+        Action:
+          - sqs:ReceiveMessage
+          - sqs:DeleteMessage
+          - sqs:GetQueueAttributes
+        Resource:
+          - Fn::GetAtt: [NotificationDLQ, Arn]
+      - Effect: Allow
+        Action:
+          - execute-api:ManageConnections
+        Resource:
+          - Fn::Join:
+              - ''
+              - - 'arn:aws:execute-api:${self:provider.region}:'
+                - Ref: AWS::AccountId
+                - ':'
+                - Ref: WebsocketsApi
+                - '/${self:provider.stage}/POST/@connections/*'
+
+  # phase2:begin
+  # Repairs the gap between "saved in DynamoDB" and "sent to SQS".
+  requeueStale:
+    handler: src/handlers/requeueStale.handler
+    timeout: 60
+    events:
+      - schedule: rate(5 minutes)
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:Query
+        Resource:
+          - Fn::Join:
+              - '/'
+              - - Fn::GetAtt: [NotificationsTable, Arn]
+                - index
+                - byStatus
+      - Effect: Allow
+        Action:
+          - sqs:SendMessage
+        Resource:
+          - Fn::GetAtt: [NotificationQueue, Arn]
+  # phase2:end
+
+  wsAuthorizer:
+    handler: src/handlers/wsAuthorizer.handler
+    # Empty list = its own role with logging only. Without it the function falls back to the shared
+    # role, which carries the WebSocket and SQS permissions of the other functions.
+    iamRoleStatements: []
+    environment:
+      USER_POOL_ID:
+        Ref: UserPool
+      USER_POOL_CLIENT_ID:
+        Ref: UserPoolClient
 
   wsConnect:
     handler: src/handlers/wsConnect.handler
     events:
       - websocket:
           route: $connect
+          authorizer:
+            name: wsAuthorizer
+            identitySource:
+              - route.request.querystring.token
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:PutItem
+        Resource:
+          - Fn::GetAtt: [ConnectionsTable, Arn]
 
   wsDisconnect:
     handler: src/handlers/wsDisconnect.handler
     events:
       - websocket:
           route: $disconnect
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:DeleteItem
+        Resource:
+          - Fn::GetAtt: [ConnectionsTable, Arn]
+
+  # Demo only: confirms every new user at once so sign-up needs no email round trip.
+  preSignUp:
+    handler: src/handlers/preSignUp.handler
+    iamRoleStatements: []
 
 resources:
+  Conditions:
+    HasAlarmEmail:
+      Fn::Not:
+        - Fn::Equals:
+            - ${env:ALARM_EMAIL, ''}
+            - ''
+
+  # Rate limit per API stage (requests per second, and a short burst).
+  extensions:
+    HttpApiStage:
+      Properties:
+        DefaultRouteSettings:
+          ThrottlingRateLimit: 25
+          ThrottlingBurstLimit: 50
+    WebsocketsDeploymentStage:
+      Properties:
+        DefaultRouteSettings:
+          ThrottlingRateLimit: 25
+          ThrottlingBurstLimit: 50
+
   Resources:
     NotificationsTable:
       Type: AWS::DynamoDB::Table
       Properties:
         TableName: ${self:provider.environment.NOTIFICATIONS_TABLE}
         BillingMode: PAY_PER_REQUEST
+        # Old requests expire after 90 days (expiresAt, set when the item is created).
+        TimeToLiveSpecification:
+          AttributeName: expiresAt
+          Enabled: true
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
         AttributeDefinitions:
           - AttributeName: id
             AttributeType: S
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: createdAt
+            AttributeType: S
+          # phase2:begin
+          - AttributeName: status
+            AttributeType: S
+          - AttributeName: updatedAt
+            AttributeType: S
+          # phase2:end
         KeySchema:
           - AttributeName: id
             KeyType: HASH
+        GlobalSecondaryIndexes:
+          # "My notifications, newest first": one Query per page.
+          - IndexName: byUser
+            KeySchema:
+              - AttributeName: userId
+                KeyType: HASH
+              - AttributeName: createdAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          # phase2:begin
+          # Lets the sweeper find stale PENDING items without scanning the table.
+          - IndexName: byStatus
+            KeySchema:
+              - AttributeName: status
+                KeyType: HASH
+              - AttributeName: updatedAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: KEYS_ONLY
+          # phase2:end
 
     ConnectionsTable:
       Type: AWS::DynamoDB::Table
@@ -116,21 +375,154 @@ resources:
         AttributeDefinitions:
           - AttributeName: connectionId
             AttributeType: S
+          - AttributeName: userId
+            AttributeType: S
         KeySchema:
           - AttributeName: connectionId
             KeyType: HASH
+        GlobalSecondaryIndexes:
+          # "Every open tab of this user": how a status change reaches only its owner.
+          - IndexName: byUser
+            KeySchema:
+              - AttributeName: userId
+                KeyType: HASH
+              - AttributeName: connectionId
+                KeyType: RANGE
+            Projection:
+              ProjectionType: KEYS_ONLY
 
     NotificationDLQ:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: ${self:service}-${self:provider.stage}-dlq
+        MessageRetentionPeriod: 1209600
 
     NotificationQueue:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: ${self:service}-${self:provider.stage}-queue
-        VisibilityTimeout: 180
+        # Six times the worker timeout (60 s), as AWS recommends.
+        VisibilityTimeout: 360
         RedrivePolicy:
           deadLetterTargetArn:
             Fn::GetAtt: [NotificationDLQ, Arn]
-          maxReceiveCount: 3
+          maxReceiveCount: ${self:custom.maxAttempts}
+
+    # ---- Monitoring ----
+    # Set ALARM_EMAIL when deploying to get an email when an alarm fires.
+    AlarmTopic:
+      Type: AWS::SNS::Topic
+
+    AlarmEmailSubscription:
+      Type: AWS::SNS::Subscription
+      Condition: HasAlarmEmail
+      Properties:
+        TopicArn:
+          Ref: AlarmTopic
+        Protocol: email
+        Endpoint: ${env:ALARM_EMAIL, ''}
+
+    # dlqProcessor runs only when a message was dead-lettered, so any invocation is a failure
+    # the worker could not handle itself.
+    DeadLetterAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmDescription: A notification was dead-lettered
+        Namespace: AWS/Lambda
+        MetricName: Invocations
+        Dimensions:
+          - Name: FunctionName
+            Value:
+              Ref: DlqProcessorLambdaFunction
+        Statistic: Sum
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 0
+        ComparisonOperator: GreaterThanThreshold
+        TreatMissingData: notBreaching
+        AlarmActions:
+          - Ref: AlarmTopic
+
+    WorkerErrorsAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmDescription: The worker Lambda crashed or timed out
+        Namespace: AWS/Lambda
+        MetricName: Errors
+        Dimensions:
+          - Name: FunctionName
+            Value:
+              Ref: WorkerLambdaFunction
+        Statistic: Sum
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 0
+        ComparisonOperator: GreaterThanThreshold
+        TreatMissingData: notBreaching
+        AlarmActions:
+          - Ref: AlarmTopic
+
+    ApiErrorsAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmDescription: createNotification is failing
+        Namespace: AWS/Lambda
+        MetricName: Errors
+        Dimensions:
+          - Name: FunctionName
+            Value:
+              Ref: CreateNotificationLambdaFunction
+        Statistic: Sum
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 0
+        ComparisonOperator: GreaterThanThreshold
+        TreatMissingData: notBreaching
+        AlarmActions:
+          - Ref: AlarmTopic
+
+    PreSignUpInvokePermission:
+      Type: AWS::Lambda::Permission
+      Properties:
+        Action: lambda:InvokeFunction
+        FunctionName:
+          Fn::GetAtt: [PreSignUpLambdaFunction, Arn]
+        Principal: cognito-idp.amazonaws.com
+
+    UserPool:
+      Type: AWS::Cognito::UserPool
+      DependsOn: PreSignUpInvokePermission
+      Properties:
+        UserPoolName: ${self:service}-${self:provider.stage}-users
+        UsernameAttributes:
+          - email
+        Policies:
+          PasswordPolicy:
+            MinimumLength: 8
+            RequireLowercase: true
+            RequireUppercase: false
+            RequireNumbers: true
+            RequireSymbols: false
+        LambdaConfig:
+          PreSignUp:
+            Fn::GetAtt: [PreSignUpLambdaFunction, Arn]
+
+    UserPoolClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        ClientName: ${self:service}-${self:provider.stage}-web
+        UserPoolId:
+          Ref: UserPool
+        GenerateSecret: false
+        PreventUserExistenceErrors: ENABLED
+        ExplicitAuthFlows:
+          - ALLOW_USER_PASSWORD_AUTH
+          - ALLOW_REFRESH_TOKEN_AUTH
+
+  Outputs:
+    UserPoolId:
+      Value:
+        Ref: UserPool
+    UserPoolClientId:
+      Value:
+        Ref: UserPoolClient

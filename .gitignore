@@ -6,3 +6,7 @@ dist
 .DS_Store
 *.log
 .vscode
+.claude
+
+# frontend build copied next to the functions by scripts/deploy-frontend.sh
+backend/web

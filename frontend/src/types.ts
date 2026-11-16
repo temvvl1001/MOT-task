@@ -8,8 +8,14 @@ export interface Notification {
   message: string;
   status: NotificationStatus;
   result?: string;
+  attempts: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface NotificationPage {
+  items: Notification[];
+  nextToken?: string;
 }
 
 export interface CreateNotificationInput {
