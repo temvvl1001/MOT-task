@@ -10,14 +10,14 @@ custom:
     bundle: true
     minify: false
     target: node22
-  # One number for both the queue's redrive policy and the worker's retry logic.
+  # Дараалалын redrive policy болон worker-ийн дахин оролдлого хоёрт зориулсан нэг тоо.
   maxAttempts: 3
-  # Origin allowed to call the API from a browser. The app is served from the API's own origin
-  # (the web function), which needs no CORS; CORS_ORIGIN adds a frontend hosted elsewhere (Vercel).
-  # Default: this stack's own URL once it exists (read from its HttpApiUrl output), else any origin.
+  # Browser-оос API руу хандахыг зөвшөөрөх origin. Апп API-ийн өөрийн origin-оос (web функц) үйлчилдэг тул
+  # CORS хэрэггүй; CORS_ORIGIN нь өөр газар (Vercel) байрлуулсан frontend-ийг нэмнэ.
+  # Анхдагч: энэ stack-ийн өөрийн URL (HttpApiUrl output-оос уншина), байхгүй бол (анхны deploy) дурын origin.
   corsOrigin: ${env:CORS_ORIGIN, cf:notification-system-${self:provider.stage}.HttpApiUrl, '*'}
   serverless-iam-roles-per-function:
-    # Every function gets only the statements listed under its own iamRoleStatements.
+    # Функц бүр зөвхөн өөрийн iamRoleStatements-д жагсаасан эрхтэй байна.
     defaultInherit: false
 
 provider:
@@ -66,14 +66,14 @@ provider:
           - Ref: WebsocketsApi
           - '.execute-api.${self:provider.region}.amazonaws.com/${self:provider.stage}'
 
-# The built frontend (backend/web, produced by scripts/deploy-frontend.sh) ships with the functions.
+# Build хийсэн frontend (backend/web, scripts/deploy-frontend.sh үүсгэнэ) функцүүдтэй хамт багцлагдана.
 package:
   patterns:
     - web/**
 
 functions:
-  # Serves the React app on GET / and every other unmatched GET. The explicit /notifications routes
-  # are more specific, so they keep winning.
+  # GET / болон тохирохгүй бусад GET-д React апп-ыг үйлчилнэ. /notifications гэсэн тодорхой замууд
+  # илүү нарийвчлалтай тул тэд хэвээр түрүүлнэ.
   web:
     handler: src/handlers/web.handler
     iamRoleStatements: []
@@ -133,9 +133,9 @@ functions:
           arn:
             Fn::GetAtt: [NotificationQueue, Arn]
           batchSize: 5
-          # Only the records that failed go back to the queue, not the whole batch.
+          # Зөвхөн алдаатай record-ууд дараалалд буцна, бүх batch биш.
           functionResponseType: ReportBatchItemFailures
-          # Never more than 5 workers at once: protects DynamoDB and the WebSocket API from a burst.
+          # Нэгэн зэрэг 5-аас илүү worker ажиллахгүй: гэнэтийн ачаалалаас DynamoDB, WebSocket API-г хамгаална.
           maximumConcurrency: 5
     iamRoleStatements:
       - Effect: Allow
@@ -177,7 +177,7 @@ functions:
                 - Ref: WebsocketsApi
                 - '/${self:provider.stage}/POST/@connections/*'
 
-  # Finishes notifications whose message ended up in the dead-letter queue.
+  # Message нь dead-letter queue-д орсон notification-уудыг дуусгана.
   dlqProcessor:
     handler: src/handlers/dlqProcessor.handler
     timeout: 30
@@ -226,7 +226,7 @@ functions:
                 - '/${self:provider.stage}/POST/@connections/*'
 
   # phase2:begin
-  # Repairs the gap between "saved in DynamoDB" and "sent to SQS".
+  # "DynamoDB-д хадгалагдсан" ба "SQS-д илгээгдсэн" хоёрын завсрыг засна.
   requeueStale:
     handler: src/handlers/requeueStale.handler
     timeout: 60
@@ -251,8 +251,8 @@ functions:
 
   wsAuthorizer:
     handler: src/handlers/wsAuthorizer.handler
-    # Empty list = its own role with logging only. Without it the function falls back to the shared
-    # role, which carries the WebSocket and SQS permissions of the other functions.
+    # Хоосон жагсаалт = зөвхөн лог бичих эрхтэй өөрийн role. Үүнгүй бол функц нийтлэг role руу очдог бөгөөд
+    # тэр role бусад функцүүдийн WebSocket, SQS эрхийг агуулдаг.
     iamRoleStatements: []
     environment:
       USER_POOL_ID:
@@ -288,7 +288,7 @@ functions:
         Resource:
           - Fn::GetAtt: [ConnectionsTable, Arn]
 
-  # Demo only: confirms every new user at once so sign-up needs no email round trip.
+  # Зөвхөн demo: шинэ хэрэглэгчийг тэр дор нь баталгаажуулж, бүртгэлд имэйл дамжих шаардлагагүй болгоно.
   preSignUp:
     handler: src/handlers/preSignUp.handler
     iamRoleStatements: []
@@ -301,7 +301,7 @@ resources:
             - ${env:ALARM_EMAIL, ''}
             - ''
 
-  # Rate limit per API stage (requests per second, and a short burst).
+  # API stage бүрийн rate limit (секундэд хүсэлт, ба богино burst).
   extensions:
     HttpApiStage:
       Properties:
@@ -320,7 +320,7 @@ resources:
       Properties:
         TableName: ${self:provider.environment.NOTIFICATIONS_TABLE}
         BillingMode: PAY_PER_REQUEST
-        # Old requests expire after 90 days (expiresAt, set when the item is created).
+        # Хуучин хүсэлт 90 хоногийн дараа устна (expiresAt, мөр үүсэх үед тавигдана).
         TimeToLiveSpecification:
           AttributeName: expiresAt
           Enabled: true
@@ -343,7 +343,7 @@ resources:
           - AttributeName: id
             KeyType: HASH
         GlobalSecondaryIndexes:
-          # "My notifications, newest first": one Query per page.
+          # "Миний notification-ууд, шинэ нь эхэнд": хуудас бүр нэг Query.
           - IndexName: byUser
             KeySchema:
               - AttributeName: userId
@@ -353,7 +353,7 @@ resources:
             Projection:
               ProjectionType: ALL
           # phase2:begin
-          # Lets the sweeper find stale PENDING items without scanning the table.
+          # Sweeper хүснэгтийг scan хийлгүйгээр удсан PENDING мөрүүдийг олно.
           - IndexName: byStatus
             KeySchema:
               - AttributeName: status
@@ -381,7 +381,7 @@ resources:
           - AttributeName: connectionId
             KeyType: HASH
         GlobalSecondaryIndexes:
-          # "Every open tab of this user": how a status change reaches only its owner.
+          # "Энэ хэрэглэгчийн нээлттэй бүх tab": status өөрчлөлт зөвхөн эзэмшигчид хүрэх арга.
           - IndexName: byUser
             KeySchema:
               - AttributeName: userId
@@ -401,15 +401,15 @@ resources:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: ${self:service}-${self:provider.stage}-queue
-        # Six times the worker timeout (60 s), as AWS recommends.
+        # Worker-ийн timeout-ийн (60 с) зургаа дахин, AWS-ийн зөвлөснөөр.
         VisibilityTimeout: 360
         RedrivePolicy:
           deadLetterTargetArn:
             Fn::GetAtt: [NotificationDLQ, Arn]
           maxReceiveCount: ${self:custom.maxAttempts}
 
-    # ---- Monitoring ----
-    # Set ALARM_EMAIL when deploying to get an email when an alarm fires.
+    # ---- Хяналт ----
+    # Alarm ажиллахад имэйл авахын тулд deploy хийхдээ ALARM_EMAIL-ийг тохируулна.
     AlarmTopic:
       Type: AWS::SNS::Topic
 
@@ -422,8 +422,8 @@ resources:
         Protocol: email
         Endpoint: ${env:ALARM_EMAIL, ''}
 
-    # dlqProcessor runs only when a message was dead-lettered, so any invocation is a failure
-    # the worker could not handle itself.
+    # dlqProcessor нь зөвхөн message dead-letter болсон үед ажилладаг тул ямар ч ажиллалт нь worker өөрөө
+    # шийдэж чадаагүй алдаа гэсэн үг.
     DeadLetterAlarm:
       Type: AWS::CloudWatch::Alarm
       Properties:

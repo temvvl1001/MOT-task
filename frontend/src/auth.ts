@@ -1,7 +1,7 @@
 import { config } from './config';
 import { t } from './i18n';
 
-// Sign-up and sign-in talk to the Cognito API directly; no SDK is needed for four calls.
+// Бүртгүүлэх, нэвтрэх нь Cognito API руу шууд хандана; дөрвөн дуудлагад SDK хэрэггүй.
 
 export class AuthError extends Error {}
 
@@ -9,18 +9,18 @@ export interface Session {
   email: string;
   idToken: string;
   refreshToken: string;
-  // epoch milliseconds
+  // epoch миллисекунд
   expiresAt: number;
 }
 
 const STORAGE_KEY = 'notifications.session';
-// Refresh a little before the token really expires so a request never goes out with a stale one.
+// Токен жинхэнэ дуусахаас бага зэрэг өмнө шинэчилнэ, ингэснээр хүсэлт хуучирсан токентой гарахгүй.
 const REFRESH_MARGIN_MS = 60_000;
 
 export const authMessage = (type: string | undefined): string => {
   switch (type) {
-    // Cognito answers UserNotFoundException only because PreventUserExistenceErrors is LEGACY in
-    // serverless.yml. With the default (ENABLED) both cases would look like NotAuthorizedException.
+    // Cognito UserNotFoundException-ийг зөвхөн serverless.yml-д PreventUserExistenceErrors LEGACY тул хариулна.
+    // Анхдагч (ENABLED) үед хоёр тохиолдол хоёулаа NotAuthorizedException шиг харагдана.
     case 'UserNotFoundException':
       return t.auth.notRegistered;
     case 'NotAuthorizedException':
@@ -65,7 +65,7 @@ const toSession = (
 ): Session => ({
   email,
   idToken: result.IdToken,
-  // A refresh call does not return a new refresh token; keep the one we have.
+  // Шинэчлэх дуудлага шинэ refresh token буцаадаггүй; байгаа нь хэвээр хадгална.
   refreshToken: result.RefreshToken ?? previousRefreshToken ?? '',
   expiresAt: Date.now() + result.ExpiresIn * 1000,
 });
@@ -74,7 +74,7 @@ export const saveSession = (session: Session) => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
   } catch {
-    // Storage can be unavailable (private mode). The user simply signs in again next time.
+    // Хадгалалт боломжгүй байж болно (private горим). Тэгвэл хэрэглэгч дараагийн удаа дахин нэвтэрнэ.
   }
 };
 
@@ -82,7 +82,7 @@ export const clearSession = () => {
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch {
-    // ignore
+    // үл тооно
   }
 };
 
@@ -99,7 +99,7 @@ export const loadSession = (): Session | null => {
       return raw as Session;
     }
   } catch {
-    // fall through
+    // дараагийн алхам руу орно
   }
   return null;
 };
@@ -127,8 +127,8 @@ export const signUp = async (email: string, password: string): Promise<Session> 
 
 export const signOut = clearSession;
 
-// The token to put on the next request. Refreshes it when it is about to expire and signs the
-// user out (AuthError) when that is no longer possible.
+// Дараагийн хүсэлтэд тавих token. Дуусах дөхсөн бол шинэчилж, шинэчлэх боломжгүй болсон бол
+// хэрэглэгчийг гаргана (AuthError).
 export const getValidSession = async (): Promise<Session> => {
   const session = loadSession();
   if (!session) throw new AuthError(t.errors.pleaseSignIn);

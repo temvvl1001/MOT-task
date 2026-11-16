@@ -5,10 +5,10 @@ import { STALE_PENDING_MS } from '../lib/config';
 
 const MAX_PAGES = 10;
 
-// The write to DynamoDB and the send to SQS cannot be one transaction. If the API Lambda dies
-// (or SQS is down) in between, the item is saved but never queued. This scheduled function
-// repairs that: it re-enqueues PENDING items nobody has touched for a while. Re-enqueueing is
-// always safe because the worker's atomic claim ignores duplicates.
+// DynamoDB-д бичих ба SQS-д илгээх хоёрыг нэг transaction болгох боломжгүй. API Lambda завсар зогсвол
+// (эсвэл SQS унасан бол) мөр хадгалагдсан боловч дараалалд хэзээ ч орохгүй. Энэ төлөвлөгдсөн функц
+// үүнийг засна: хэсэг хугацаанд хэн ч хөндөөгүй PENDING мөрийг дахин дараалалд оруулна. Дахин оруулах нь
+// үргэлж аюулгүй, учир нь worker-ийн атомик claim давхардлыг алгасна.
 export const handler = async () => {
   const cutoff = new Date(Date.now() - STALE_PENDING_MS).toISOString();
   const ids: string[] = [];

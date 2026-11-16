@@ -1,4 +1,4 @@
-// Everything environment-specific comes from VITE_* variables (see .env.example).
+// Орчноос хамаарах бүх зүйл VITE_* хувьсагчаас ирнэ (.env.example-ийг үз).
 export const config = {
   apiUrl: (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, ''),
   wsUrl: import.meta.env.VITE_WS_URL ?? '',
@@ -13,7 +13,7 @@ const REQUIRED = {
   VITE_COGNITO_CLIENT_ID: config.clientId,
 };
 
-// Names of the variables that are missing, so the app can say so instead of failing silently.
+// Дутуу хувьсагчдын нэр, ингэснээр апп чимээгүй эвдрэхийн оронд юу дутууг хэлж чадна.
 export const missingConfig = (): string[] =>
   Object.entries(REQUIRED)
     .filter(([, value]) => !value)

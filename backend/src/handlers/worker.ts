@@ -13,8 +13,8 @@ type Outcome = 'done' | 'retry';
 const receiveCount = (record: SQSRecord) =>
   Number(record.attributes?.ApproximateReceiveCount ?? '1');
 
-// Ask SQS to redeliver the message after a backoff instead of waiting out the long default
-// visibility timeout. If this fails the default timeout still applies, so it is best effort.
+// Message-ийг урт анхдагч visibility timeout-ийг хүлээлгүй, backoff-ын дараа дахин хүргэхийг SQS-ээс хүснэ.
+// Энэ амжилтгүй болбол анхдагч timeout үйлчилнэ, тиймээс хамгийн сайн хүчин чармайлтаар хийгдэнэ.
 const scheduleRetry = async (record: SQSRecord, attempt: number) => {
   try {
     await sqs.send(
@@ -33,13 +33,13 @@ const processRecord = async (record: SQSRecord): Promise<Outcome> => {
   const attempt = receiveCount(record);
   const id = parseId(record.body);
   if (!id) {
-    // Cannot be processed by anyone. Let SQS retry and finally park it in the DLQ.
+    // Хэн ч боловсруулж чадахгүй. SQS дахин оролдож, эцэст нь DLQ-д хадгална.
     console.error(`Unreadable message ${record.messageId}`);
     return 'retry';
   }
 
-  // Atomic PENDING -> PROCESSING. Missing, finished or in-flight items are skipped, which is
-  // what makes duplicate deliveries harmless.
+  // Атомик PENDING -> PROCESSING. Байхгүй, дууссан, эсвэл боловсруулагдаж буй мөрийг алгасах нь
+  // давхар хүргэлтийг хор хөнөөлгүй болгодог.
   const claimed = await claim(id, attempt);
   if (!claimed) {
     console.log(`Notification ${id} is missing, finished or in progress, skipping`);
@@ -53,14 +53,14 @@ const processRecord = async (record: SQSRecord): Promise<Outcome> => {
   } catch (err) {
     const reason = err instanceof Error ? err.message : 'Unknown error';
 
-    // Permanent: retrying cannot help.
+    // Байнгын: дахин оролдсон ч нэмэргүй.
     if (err instanceof PermanentDeliveryError) {
       const failed = await finish(id, 'FAILED', reason);
       if (failed) await notify(failed);
       return 'done';
     }
 
-    // Temporary (or unexpected): out of attempts means FAILED, otherwise try again later.
+    // Түр зуурын (эсвэл гэнэтийн): оролдлого дуусвал FAILED, үгүй бол дараа нь дахин оролдоно.
     if (attempt >= MAX_ATTEMPTS) {
       const failed = await finish(id, 'FAILED', `${attempt} оролдлогын дараа бууж өгөв: ${reason}`);
       if (failed) await notify(failed);
@@ -80,8 +80,8 @@ const processRecord = async (record: SQSRecord): Promise<Outcome> => {
   return 'done';
 };
 
-// Partial batch response: only the records that need another try go back to the queue, so one
-// failing record never causes the others in the batch to be delivered again.
+// Partial batch response: зөвхөн дахин оролдох record-ууд дараалалд буцах тул нэг
+// алдаатай record batch-ийн бусдыг дахин хүргүүлэхгүй.
 export const handler: SQSHandler = async (event): Promise<SQSBatchResponse> => {
   const batchItemFailures: SQSBatchResponse['batchItemFailures'] = [];
 
@@ -91,7 +91,7 @@ export const handler: SQSHandler = async (event): Promise<SQSBatchResponse> => {
         batchItemFailures.push({ itemIdentifier: record.messageId });
       }
     } catch (err) {
-      // Infrastructure error (DynamoDB throttling, network ...): retry with backoff.
+      // Дэд бүтцийн алдаа (DynamoDB throttle, сүлжээ ...): backoff-той дахин оролдоно.
       console.error(`Processing ${record.messageId} failed`, err);
       await scheduleRetry(record, receiveCount(record));
       batchItemFailures.push({ itemIdentifier: record.messageId });

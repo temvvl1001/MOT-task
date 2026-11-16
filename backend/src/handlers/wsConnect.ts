@@ -2,13 +2,13 @@ import { APIGatewayProxyWebsocketHandlerV2 } from 'aws-lambda';
 import { PutCommand } from '@aws-sdk/lib-dynamodb';
 import { ddb } from '../lib/clients';
 
-// API Gateway closes every WebSocket after 2 hours at the latest. The extra hour
-// guarantees the TTL only removes rows whose connection is certainly gone.
+// API Gateway WebSocket бүрийг дээд тал нь 2 цагийн дараа хаадаг. Нэмэлт нэг цаг нь
+// TTL зөвхөн холболт нь үнэхээр дууссан мөрийг л устгахыг баталгаажуулна.
 export const CONNECTION_TTL_SECONDS = 3 * 60 * 60;
 
 export const handler: APIGatewayProxyWebsocketHandlerV2 = async (event) => {
-  // Set by the wsAuthorizer Lambda after it verified the token; API Gateway never lets an
-  // unauthorized request reach this point.
+  // Token-ийг шалгасны дараа wsAuthorizer Lambda тавина; API Gateway зөвшөөрөлгүй хүсэлтийг
+  // энд хүртэл хэзээ ч оруулдаггүй.
   const { authorizer } = event.requestContext as unknown as {
     authorizer?: { userId?: string };
   };

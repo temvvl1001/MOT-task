@@ -1,14 +1,14 @@
-// End-to-end test against a DEPLOYED stack. It signs up real Cognito users, drives the real API and
-// WebSocket, and (for the failure scenarios that cannot be produced through the API) talks to
-// DynamoDB, SQS and Lambda directly with the AWS CLI.
+// Deploy хийсэн stack-ийн END-TO-END тест. Бодит Cognito хэрэглэгч үүсгэж, бодит API ба
+// WebSocket-ийг ажиллуулж, (API-аар үүсгэх боломжгүй алдааны сценариудад) AWS CLI-аар шууд
+// DynamoDB, SQS, Lambda-тай харьцана.
 //
 //   API_URL=https://<id>.execute-api.<region>.amazonaws.com \
 //   WS_URL=wss://<id>.execute-api.<region>.amazonaws.com/dev \
 //   COGNITO_CLIENT_ID=<client id> \
 //   node scripts/e2e.mjs
 //
-// Optional: COGNITO_REGION (default ap-southeast-2), STAGE (default dev), AWS_DIRECT=0 to skip the
-// checks that need AWS CLI credentials.
+// Нэмэлт: COGNITO_REGION (анхдагч ap-southeast-2), STAGE (анхдагч dev), AWS_DIRECT=0 бол AWS CLI-ийн эрх
+// шаарддаг шалгалтуудыг алгасна.
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -34,7 +34,7 @@ const SWEEPER = `${PREFIX}-requeueStale`;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// ---------- AWS CLI (direct access, only for scenarios the API cannot create) ----------
+// ---------- AWS CLI (шууд хандалт, зөвхөн API-аар үүсгэх боломжгүй сценариудад) ----------
 const aws = (...args) => {
   const out = execFileSync('aws', [...args, '--region', REGION, '--output', 'json'], {
     encoding: 'utf8',
@@ -141,7 +141,7 @@ const updatesOf = (socket, id) =>
 const finished = (socket, id) => () =>
   updatesOf(socket, id).find((n) => n.status === 'COMPLETED' || n.status === 'FAILED');
 
-// ---------- tiny test runner ----------
+// ---------- жижиг тест ажиллуулагч ----------
 const results = [];
 const check = async (name, fn) => {
   const started = Date.now();
@@ -168,7 +168,7 @@ const aliceTab1 = await openSocket(alice.token);
 const aliceTab2 = await openSocket(alice.token);
 const bobTab = await openSocket(bob.token);
 
-// ---- The deployed frontend ----
+// ---- Deploy хийсэн frontend ----
 await check('Frontend: HTTPS дээр, CSP ба аюулгүй байдлын header-тэй, deep link index.html-ээр хариулна', async () => {
   const page = await fetch(`${API}/`);
   eq(page.status, 200, 'GET /');
@@ -189,13 +189,13 @@ await check('Frontend: HTTPS дээр, CSP ба аюулгүй байдлын he
 
   eq((await fetch(`${API}/some/deep/link`)).status, 200, 'deep link');
   eq((await fetch(`${API}/assets/missing.js`)).status, 404, 'missing asset');
-  // fetch() flattens "%2e%2e" itself, so the request that arrives is a plain unknown page. What
-  // matters is that no file outside the web root is ever served.
+  // fetch() нь "%2e%2e"-г өөрөө тэгшилдэг тул ирэх хүсэлт нь энгийн үл мэдэгдэх хуудас болдог.
+  // Чухал нь web root-ийн гаднах файл хэзээ ч үйлчлэгдэхгүй байх.
   const probe = await (await fetch(`${API}/%2e%2e/%2e%2e/etc/passwd`)).text();
   expect(!probe.includes('root:') && !probe.includes('/bin/'), 'a system file was served');
 });
 
-// ---- Authentication and authorization ----
+// ---- Нэвтрэлт ба эрх ----
 await check('HTTP: token-гүй хүсэлт татгалзагдана (401)', async () => {
   eq((await call(undefined, 'GET', '/notifications')).status, 401, 'GET');
   eq((await call(undefined, 'POST', '/notifications', { body: { recipient: 'a@b.c', channel: 'EMAIL', message: 'x' } })).status, 401, 'POST');
@@ -210,7 +210,7 @@ await check('WebSocket: хуурамч token-тэй холболт татгал�
   expect(await isRejected('not.a.jwt'), 'connection was accepted');
 });
 
-// ---- Validation ----
+// ---- Шалгалт ----
 await check('POST шалгалт: 400 ба тогтвортой алдааны код буцаана', async () => {
   const bad = (body) => call(alice.token, 'POST', '/notifications', { body });
   eq((await bad('{oops')).body, { code: 'invalid_json', error: 'Invalid JSON' }, 'invalid JSON');
@@ -251,7 +251,7 @@ await check('Нэвтрэлт: бүртгэлгүй имэйл ба буруу �
   eq(await signIn(alice.email, 'WrongPassw0rd'), 'NotAuthorizedException', 'wrong password');
 });
 
-// ---- Processing scenarios (run in parallel, each takes up to ~30 s because of the backoff) ----
+// ---- Боловсруулалтын сценариуд (зэрэг ажиллана, backoff-ийн улмаас тус бүр ~30 с хүртэл) ----
 const created = {};
 await Promise.all([
   check('Амжилт: PENDING -> PROCESSING -> COMPLETED, WebSocket-ээр, polling-гүй', async () => {
@@ -296,7 +296,7 @@ await Promise.all([
   }),
 ]);
 
-// ---- Data isolation ----
+// ---- Өгөгдлийн тусгаарлалт ----
 await check('Тусгаарлалт: өөр хэрэглэгч бусдын notification, live update-ийг хардаггүй', async () => {
   const bobsList = await call(bob.token, 'GET', '/notifications');
   eq(bobsList.status, 200, 'status');
@@ -349,19 +349,19 @@ await check('Idempotency-Key: давтагдсан хүсэлт яг нэг noti
   await waitFor(finished(bobTab, first.body.id), 'completion push');
   eq(updatesOf(bobTab, first.body.id).filter((n) => n.status === 'COMPLETED').length, 1, 'completions');
 
-  // The same key for a DIFFERENT request must be refused, not answered with the old notification.
+  // ӨӨР хүсэлтэд ижил түлхүүр хэрэглэвэл татгалзах ёстой, хуучин notification-ээр хариулах ёсгүй.
   const reused = await create(bob, 'idem@example.com', { headers, body: { message: 'өөр агуулга' } });
   eq(reused.status, 409, 'status when the key is reused');
   eq(reused.body.code, 'idempotency_key_reused', 'code when the key is reused');
 });
 
-// ---- Duplicate processing and partial failure (need direct AWS access) ----
+// ---- Давхар боловсруулалт ба хэсэгчилсэн алдаа (AWS-д шууд хандах шаардлагатай) ----
 if (DIRECT) {
   const mainQueue = queueUrl('queue');
   const dlq = queueUrl('dlq');
 
-  // A freshly created index cannot be read until DynamoDB finished backfilling it, which can
-  // take a few minutes after a deploy that added it.
+  // Шинээр үүсгэсэн индексийг DynamoDB backfill хийж дуустал унших боломжгүй бөгөөд индекс нэмсэн
+  // deploy-ийн дараа хэдэн минут үргэлжилж болно.
   const indexReady = () =>
     aws('dynamodb', 'describe-table', '--table-name', TABLE).Table.GlobalSecondaryIndexes.every(
       (index) => index.IndexStatus === 'ACTIVE'
@@ -372,20 +372,20 @@ if (DIRECT) {
   }
 
   await check('Давхар SQS хүргэлт: notification яг нэг удаа боловсруулагдана', async () => {
-    const socket = await openSocket(carol.token); // open first so no push is missed
+    const socket = await openSocket(carol.token); // push алдагдахгүйн тулд эхлээд нээнэ
     const id = (await create(carol, 'dupe@example.com')).body.id;
-    for (let i = 0; i < 3; i++) sendMessage(mainQueue, { id }); // three extra copies of the message
+    for (let i = 0; i < 3; i++) sendMessage(mainQueue, { id }); // message-ийн гурван нэмэлт хуулбар
     await waitFor(finished(socket, id), 'completion push');
-    await sleep(10_000); // give any wrongly processed duplicate time to show up
+    await sleep(10_000); // буруугаар боловсруулагдсан давхар хүргэлт илрэх хугацааг өгнө
     eq(updatesOf(socket, id).map((n) => n.status), ['PROCESSING', 'COMPLETED'], 'pushed statuses');
     socket.close();
   });
 
   await check('Хэсэгчилсэн алдаа: SQS-д хүрээгүй PENDING мөрийг sweeper дахин оруулна', async () => {
     const id = randomUUID();
-    putPendingItem({ id, userId: carol.sub, minutesAgo: 10 }); // saved in DynamoDB, never queued
+    putPendingItem({ id, userId: carol.sub, minutesAgo: 10 }); // DynamoDB-д хадгалагдсан, хэзээ ч дараалалд ороогүй
     const socket = await openSocket(carol.token);
-    await sleep(3000); // let the byStatus index catch up
+    await sleep(3000); // byStatus индекс гүйцэх хүртэл хүлээнэ
     aws('lambda', 'invoke', '--function-name', SWEEPER, join(tmpdir(), 'sweeper-out.json'));
     const done = await waitFor(finished(socket, id), 'completion after the sweep', 40_000);
     eq(done.status, 'COMPLETED', 'final status');
@@ -403,7 +403,7 @@ if (DIRECT) {
     socket.close();
   });
 
-  // ---- Infrastructure audit: the deployed resources really match what the README claims ----
+  // ---- Дэд бүтцийн аудит: deploy хийсэн нөөц README-ийн мэдэгдэлтэй үнэхээр таарна ----
   const functionName = (name) => `${PREFIX}-${name}`;
   const actionsOfRole = (roleName) => {
     const actions = new Set();
@@ -468,7 +468,7 @@ if (DIRECT) {
 
 [aliceTab1, aliceTab2, bobTab].forEach((s) => s.close());
 
-// ---------- report ----------
+// ---------- тайлан ----------
 const passed = results.filter((r) => r.ok).length;
 console.log(`\n${passed}/${results.length} шалгалт давлаа\n`);
 console.log('| # | Шалгалт | Үр дүн | Хугацаа |\n|---|---|---|---|');

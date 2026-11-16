@@ -19,8 +19,8 @@ export function NotificationForm({ onCreate }: Props) {
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
 
-  // The key stands for one request. Pressing Send again with the same content reuses it, so the
-  // server can never create two notifications. Changing the content starts a new key.
+  // Түлхүүр нэг хүсэлтийг төлөөлнө. Ижил агуулгаар дахин илгээхэд ижил түлхүүрийг ашигладаг тул
+  // сервер хоёр notification үүсгэж чадахгүй. Агуулга өөрчлөгдвөл шинэ түлхүүр эхэлнэ.
   const attempt = useRef<Attempt>({ key: crypto.randomUUID(), content: '' });
 
   const submit = async (event: FormEvent) => {

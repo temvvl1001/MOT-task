@@ -36,7 +36,7 @@ const request = async <T>(
 
   const data = await res.json().catch(() => ({}));
   if (res.status === 401) throw new AuthError(t.errors.sessionExpired);
-  // The API names the problem with a `code`; the text for the user comes from i18n.
+  // API асуудлыг `code`-оор нэрлэнэ; хэрэглэгчид харагдах текстийг i18n-ээс авна.
   if (!res.ok) throw new ApiError(res.status, errorText(data.code) ?? t.errors.generic, data.code);
   return { status: res.status, data: data as T };
 };
@@ -47,14 +47,14 @@ export const listNotifications = async (nextToken?: string, limit = 20) => {
   return (await request<NotificationPage>(`/notifications?${query}`)).data;
 };
 
-// The idempotency key makes a retried request safe: the server returns the original
-// notification instead of creating a second one.
+// Idempotency key нь давтагдсан хүсэлтийг аюулгүй болгоно: сервер хоёр дахь notification
+// үүсгэхийн оронд анхных нь буцаана.
 export const createNotification = async (input: CreateNotificationInput, idempotencyKey: string) => {
   const { status, data } = await request<Notification>('/notifications', {
     method: 'POST',
     body: input,
     headers: { 'Idempotency-Key': idempotencyKey },
   });
-  // 202: saved, but queueing was delayed. The server will queue it shortly.
+  // 202: хадгалагдсан ч дараалалд орох нь хойшилсон. Сервер удахгүй дараалалд оруулна.
   return { notification: data, delayed: status === 202 };
 };

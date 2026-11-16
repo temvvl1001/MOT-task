@@ -1,4 +1,4 @@
-// Cursor for the `byUser` index: exactly the keys DynamoDB returns as LastEvaluatedKey.
+// `byUser` индексийн cursor: DynamoDB-ийн LastEvaluatedKey-ээр буцаадаг түлхүүрүүд яг тэр хэвээрээ.
 export interface Cursor {
   id: string;
   userId: string;
@@ -8,8 +8,8 @@ export interface Cursor {
 export const encodeCursor = (key: Cursor): string =>
   Buffer.from(JSON.stringify(key)).toString('base64url');
 
-// The token comes from the client, so it is never trusted: it must decode to the expected
-// shape and belong to the caller. Otherwise a user could start reading at someone else's items.
+// Token нь client-ээс ирдэг тул хэзээ ч итгэхгүй: хүлээгдэж буй бүтэцтэй тайлагдаж,
+// дуудагчийнх байх ёстой. Үгүй бол хэрэглэгч бусдын мөрөөс унших боломжтой болно.
 export const decodeCursor = (token: string, userId: string): Cursor | null => {
   try {
     const key = JSON.parse(Buffer.from(token, 'base64url').toString('utf8'));
@@ -21,7 +21,7 @@ export const decodeCursor = (token: string, userId: string): Cursor | null => {
       return { id: key.id, userId: key.userId, createdAt: key.createdAt };
     }
   } catch {
-    // fall through
+    // дараагийн алхам руу орно
   }
   return null;
 };

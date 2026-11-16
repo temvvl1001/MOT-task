@@ -1,14 +1,14 @@
 import type { CreateNotificationInput } from './types';
 
-// One Idempotency-Key stands for one request. Sending the same content again (after a timeout, a
-// double click, a lost response) must reuse the key so the server creates only one notification.
-// Sending different content must use a new key, otherwise the server rejects it as a key reuse.
+// Нэг Idempotency-Key нь нэг хүсэлтийг төлөөлнө. Ижил агуулгыг дахин илгээхэд (timeout, давхар дарсан,
+// хариу алдагдсаны дараа) түлхүүрийг дахин ашиглах ёстой, ингэснээр сервер нэг л notification үүсгэнэ.
+// Өөр агуулга илгээхэд шинэ түлхүүр хэрэглэх ёстой, үгүй бол сервер түлхүүрийг буруу ашигласан гэж татгалзана.
 export interface Attempt {
   key: string;
   content: string;
 }
 
-// What makes two requests "the same": the values the server stores (it trims them as well).
+// Хоёр хүсэлтийг "ижил" болгодог зүйл: сервер хадгалдаг утгууд (мөн тэр тайрдаг).
 export const contentOf = (input: CreateNotificationInput): string =>
   JSON.stringify({
     recipient: input.recipient.trim(),

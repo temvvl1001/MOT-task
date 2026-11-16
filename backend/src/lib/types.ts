@@ -9,11 +9,11 @@ export interface Notification {
   message: string;
   status: NotificationStatus;
   result?: string;
-  // How many times the worker has picked this notification up.
+  // Worker энэ notification-ийг хэдэн удаа авсан.
   attempts: number;
   createdAt: string;
   updatedAt: string;
-  // Epoch seconds. DynamoDB's TTL removes the item after this moment.
+  // Epoch секунд. Энэ мөчөөс хойш DynamoDB-ийн TTL мөрийг устгана.
   expiresAt?: number;
 }
 

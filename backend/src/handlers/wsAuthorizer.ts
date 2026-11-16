@@ -1,9 +1,9 @@
 import type { APIGatewayAuthorizerResult, APIGatewayRequestAuthorizerHandler } from 'aws-lambda';
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 
-// API Gateway's built-in JWT authorizer exists only for HTTP APIs. A WebSocket API needs a Lambda
-// authorizer on $connect. Browsers cannot set headers on a WebSocket, so the ID token comes in
-// the query string (?token=...). It is only ever sent over wss://.
+// API Gateway-ийн суурилсан JWT authorizer нь зөвхөн HTTP API-д бий. WebSocket API-д $connect дээр
+// Lambda authorizer хэрэгтэй. Browser WebSocket-д header тавьж чаддаггүй тул ID token нь
+// query string-ээр (?token=...) ирнэ. Үүнийг зөвхөн wss:// дээр илгээнэ.
 const verifier = CognitoJwtVerifier.create({
   userPoolId: process.env.USER_POOL_ID ?? '',
   clientId: process.env.USER_POOL_CLIENT_ID ?? '',
@@ -29,11 +29,11 @@ export const handler: APIGatewayRequestAuthorizerHandler = async (event) => {
   if (!token) throw new Error('Unauthorized');
 
   try {
-    // Checks signature, issuer, audience, token type and expiry.
+    // Гарын үсэг, issuer, audience, token-ий төрөл, хугацааг шалгана.
     const { sub } = await verifier.verify(token);
     return policy('Allow', sub, event.methodArn, sub);
   } catch {
-    // The exact message makes API Gateway answer 401.
+    // Яг энэ мессеж нь API Gateway-г 401 хариулахад хүргэнэ.
     throw new Error('Unauthorized');
   }
 };

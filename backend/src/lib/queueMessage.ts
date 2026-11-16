@@ -1,4 +1,4 @@
-// The queue carries only the notification id; DynamoDB stays the single source of truth.
+// Дараалал зөвхөн notification-ийн id-г зөөнө; үнэний цорын ганц эх сурвалж нь DynamoDB.
 export const parseId = (body: string): string | null => {
   try {
     const { id } = JSON.parse(body);

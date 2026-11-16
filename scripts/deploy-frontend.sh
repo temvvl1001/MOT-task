@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Builds the frontend against the deployed backend and publishes it: the build is copied to
-# backend/web and shipped by `serverless deploy`, which serves it on the API's own HTTPS URL.
+# Frontend-ийг deploy хийсэн backend-д зориулж build хийж нийтэлнэ: build-ийг
+# backend/web руу хуулж `serverless deploy`-оор илгээнэ, API-ийн өөрийн HTTPS хаяг дээр үйлчилнэ.
 #
-#   scripts/deploy-frontend.sh            (optional: STAGE=dev AWS_REGION=ap-southeast-2)
+#   scripts/deploy-frontend.sh            (сонголттой: STAGE=dev AWS_REGION=ap-southeast-2)
 set -euo pipefail
 
 STAGE="${STAGE:-dev}"

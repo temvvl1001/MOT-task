@@ -3,11 +3,11 @@ import { readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, sep } from 'node:path';
 import { gzipSync } from 'node:zlib';
 
-// Serves the built React app (backend/web, copied from frontend/dist by scripts/deploy-frontend.sh)
-// from the same HTTP API as the JSON endpoints. One HTTPS origin, so no CORS is needed.
+// Build хийсэн React апп-ыг (backend/web, frontend/dist-ээс scripts/deploy-frontend.sh хуулсан)
+// JSON endpoint-уудтай нэг HTTP API-аас үйлчилнэ. Нэг HTTPS origin тул CORS хэрэггүй.
 //
-// CloudFront + S3 is the usual choice for static hosting; a brand-new AWS account has to be
-// verified by AWS Support before it may create CloudFront resources, so this is the fallback.
+// Статик hosting-д S3 + CloudFront нь ердийн сонголт; шинэ AWS account CloudFront нөөц үүсгэхийн өмнө
+// AWS Support-оор баталгаажсан байх ёстой тул энэ нь нөөц шийдэл.
 
 const root = () => process.env.WEB_ROOT ?? join(process.env.LAMBDA_TASK_ROOT ?? process.cwd(), 'web');
 
@@ -24,8 +24,8 @@ const TYPES: Record<string, string> = {
 };
 const COMPRESSIBLE = /^(text\/|application\/json|image\/svg)/;
 
-// What the page may load and talk to. Everything else is blocked by the browser, which limits the
-// damage of an XSS bug (the session token lives in localStorage).
+// Хуудас юуг ачаалж, юуд холбогдож болохыг заана. Бусдыг browser хориглодог тул XSS алдааны хор уршгийг
+// хязгаарлана (session token нь localStorage-д байдаг).
 const contentSecurityPolicy = () => {
   const wsHost = process.env.WS_ENDPOINT ? new URL(process.env.WS_ENDPOINT).host : '';
   const connect = [
@@ -55,7 +55,7 @@ const SECURITY_HEADERS = () => ({
   'permissions-policy': 'camera=(), microphone=(), geolocation=()',
 });
 
-// Maps a URL path to a file inside the web root, or null when the path tries to leave it.
+// URL замыг web root доторх файл руу хөрвүүлнэ, root-оос гарах гэвэл null буцаана.
 export const resolveInside = (webRoot: string, urlPath: string): string | null => {
   let decoded: string;
   try {
@@ -83,7 +83,7 @@ const text = (statusCode: number, body: string): APIGatewayProxyStructuredResult
   body,
 });
 
-// Files never change while a Lambda instance lives, so they are read (and compressed) once.
+// Lambda instance амьд байх хугацаанд файл өөрчлөгддөггүй тул нэг л удаа уншиж (мөн шахаж) хадгална.
 const cache = new Map<string, { body: Buffer; gzip?: Buffer }>();
 const load = (file: string, compressible: boolean) => {
   let entry = cache.get(file);
@@ -96,8 +96,8 @@ const load = (file: string, compressible: boolean) => {
 };
 
 const cacheControl = (urlPath: string, servedIndex: boolean) => {
-  if (servedIndex) return 'no-cache'; // always re-fetch the page, it names the current assets
-  if (urlPath.startsWith('/assets/')) return 'public, max-age=31536000, immutable'; // content-hashed
+  if (servedIndex) return 'no-cache'; // index.html-ийг үргэлж шинээр татна, учир нь одоогийн asset-уудын нэрийг агуулдаг
+  if (urlPath.startsWith('/assets/')) return 'public, max-age=31536000, immutable'; // агуулгаар hash хийгдсэн
   return 'public, max-age=3600';
 };
 
@@ -111,8 +111,8 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   let file = requested;
   let servedIndex = false;
   if (!isFile(file)) {
-    // A missing asset (/assets/x.js) must stay a 404. Anything else is a page of the single-page
-    // app (/, /anything) and is answered by index.html.
+    // Байхгүй asset (/assets/x.js) 404 хэвээр байх ёстой. Бусад зам нь single-page
+    // аппын хуудас (/, /anything) тул index.html-ээр хариулагдана.
     if (extname(urlPath) !== '') return text(404, 'Not found');
     file = join(webRoot, 'index.html');
     servedIndex = true;

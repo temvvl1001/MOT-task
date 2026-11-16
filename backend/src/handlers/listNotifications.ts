@@ -23,7 +23,7 @@ export const handler: APIGatewayProxyHandlerV2WithJWTAuthorizer = async (event) 
   const startKey = token ? decodeCursor(token, userId) : undefined;
   if (token && !startKey) return apiError(400, 'invalid_next_token', 'Invalid nextToken');
 
-  // One Query against the byUser index: only this user's items, newest first, one page.
+  // byUser индекс дээр нэг Query: зөвхөн энэ хэрэглэгчийн мөрүүд, шинэ нь эхэнд, нэг хуудас.
   const { Items = [], LastEvaluatedKey } = await ddb.send(
     new QueryCommand({
       TableName: process.env.NOTIFICATIONS_TABLE,

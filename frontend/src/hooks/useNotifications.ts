@@ -8,7 +8,7 @@ import { connectWebSocket, type ConnectionState } from '../ws';
 
 const messageOf = (err: unknown) => (err instanceof Error ? err.message : t.errors.generic);
 
-// Everything the screen needs: the list (first page, "load more", live updates) and creating.
+// Дэлгэцэд хэрэгтэй бүх зүйл: жагсаалт (эхний хуудас, "цааш үзэх", live шинэчлэл) ба үүсгэх.
 export function useNotifications(onAuthError: () => void) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [connection, setConnection] = useState<ConnectionState>('connecting');
@@ -39,7 +39,7 @@ export function useNotifications(onAuthError: () => void) {
       getToken: async () => (await getValidSession()).idToken,
       onUpdate: (notification) => dispatch({ type: 'upsert', notification }),
       onState: setConnection,
-      // Whatever changed while the connection was down is fetched again.
+      // Холболт тасарсан хугацаанд өөрчлөгдсөн бүгдийг дахин татна.
       onReconnect: () => void loadFirstPage(),
       onAuthError,
     });

@@ -3,17 +3,17 @@ import { Notification } from './types';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// The `flaky` recipient recovers on this attempt.
+// `flaky` хүлээн авагч энэ оролдлогод сэргэнэ.
 export const FLAKY_RECOVERS_ON_ATTEMPT = 3;
 
-// Simulated delivery. The `result` texts are Mongolian because the UI shows them to the user.
-// The recipient decides the outcome so every path can be demonstrated:
-//   *fail*    permanent failure  -> FAILED at once
-//   *flaky*   temporary failure on attempts 1-2, then succeeds
-//   *outage*  temporary failure every time -> FAILED once the attempts run out
-//   anything else succeeds
-// In production this would dispatch per channel (SES / SNS / FCM) and map provider errors
-// (4xx -> permanent, 5xx / timeouts / throttling -> temporary).
+// Симуляци хийсэн хүргэлт. `result` текст нь UI хэрэглэгчид үзүүлдэг тул монгол хэлээр.
+// Хүлээн авагч үр дүнг тодорхойлдог тул бүх замыг демо хийж болно:
+//   *fail*    байнгын алдаа  -> шууд FAILED
+//   *flaky*   1-2-р оролдлогод түр зуурын алдаа, дараа нь амжилттай
+//   *outage*  үргэлж түр зуурын алдаа -> оролдлого дуусмагц FAILED
+//   бусад нь амжилттай
+// Production-д суваг тус бүрээр (SES / SNS / FCM) илгээж, provider-ийн алдааг ангилна
+// (4xx -> байнгын, 5xx / timeout / throttle -> түр зуурын).
 export const deliver = async (n: Notification, attempt: number): Promise<string> => {
   await sleep(1000 + Math.random() * 2000);
   const recipient = n.recipient.toLowerCase();

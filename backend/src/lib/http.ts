@@ -9,8 +9,8 @@ export const json = (
   body: JSON.stringify(body),
 });
 
-// Every error answers with the same shape. `code` is stable and meant for programs (the frontend
-// picks the text shown to the user from it); `error` is an English explanation for developers.
+// Алдаа бүр ижил бүтцээр хариулна. `code` нь тогтвортой бөгөөд програмд зориулагдсан (frontend
+// хэрэглэгчид харуулах текстийг үүгээр сонгоно); `error` нь хөгжүүлэгчид зориулсан англи тайлбар.
 export interface ApiErrorBody {
   code: string;
   error: string;

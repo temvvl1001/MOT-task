@@ -25,7 +25,7 @@ const header = (res: APIGatewayProxyStructuredResultV2, name: string) =>
 
 beforeAll(() => {
   // sandbox/
-  //   secret.txt          <- outside the web root: must never be reachable
+  //   secret.txt          <- web root-ийн гадна: хэзээ ч хүрч болохгүй
   //   web/index.html, web/favicon.svg, web/assets/app-abc123.js
   sandbox = mkdtempSync(join(tmpdir(), 'web-test-'));
   webRoot = join(sandbox, 'web');
@@ -108,10 +108,10 @@ describe('web: web root-оос гарах оролдлого (path traversal)', 
   it('resolveInside: ".." нь web root-оос хэзээ ч гарахгүй, хэрэггүй тэмдэгттэй зам татгалзагдана', () => {
     expect(resolveInside('/srv/web', '/a/b.js')).toBe('/srv/web/a/b.js');
     expect(resolveInside('/srv/web', '/')).toBe('/srv/web/');
-    // ".." is flattened before the path is joined, so the result always stays under the root
+    // ".." нь замыг залгахаас өмнө тэгшлэгддэг тул үр дүн үргэлж root дотор байна
     expect(resolveInside('/srv/web', '/../etc/passwd')).toBe('/srv/web/etc/passwd');
     expect(resolveInside('/srv/web', '/..%2f..%2fetc/passwd')).toBe('/srv/web/etc/passwd');
-    // a NUL byte or a broken escape is refused outright
+    // NUL байт эсвэл эвдэрсэн escape-ийг шууд татгалзана
     expect(resolveInside('/srv/web', '/a\0b')).toBeNull();
     expect(resolveInside('/srv/web', '/%')).toBeNull();
   });

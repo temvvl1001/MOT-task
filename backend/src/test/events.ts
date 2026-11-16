@@ -10,7 +10,7 @@ interface EventOptions {
   query?: Record<string, string>;
 }
 
-// A minimal HTTP API event as API Gateway delivers it after the JWT authorizer accepted the token.
+// JWT authorizer token-ийг зөвшөөрсний дараа API Gateway-ийн өгдөг хамгийн энгийн HTTP API event.
 export const apiEvent = (options: EventOptions = {}) =>
   ({
     headers: options.headers ?? {},

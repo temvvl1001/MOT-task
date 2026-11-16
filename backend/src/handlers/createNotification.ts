@@ -12,8 +12,8 @@ import { validateCreateInput } from '../lib/validate';
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9_-]{8,64}$/;
 
-// The same user and the same key always map to the same id, so a client that retries a request
-// (timeout, double click, lost response) can never create a second notification.
+// Ижил хэрэглэгч, ижил түлхүүр үргэлж ижил id өгдөг тул хүсэлтээ дахин илгээсэн client
+// (timeout, давхар дарсан, хариу алдагдсан) хоёр дахь notification үүсгэж чадахгүй.
 const idFor = (userId: string, key: string) => {
   const h = createHash('sha256').update(`${userId}:${key}`).digest('hex');
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
@@ -56,7 +56,7 @@ export const handler: APIGatewayProxyHandlerV2WithJWTAuthorizer = async (event) 
     expiresAt: Math.floor(Date.now() / 1000) + RETENTION_SECONDS,
   };
 
-  // Step 1, the commit point: once the item is in DynamoDB the request is durable.
+  // 1-р алхам, commit point: мөр DynamoDB-д орсон бол хүсэлт найдвартай хадгалагдсан.
   try {
     await ddb.send(
       new PutCommand({
@@ -67,12 +67,12 @@ export const handler: APIGatewayProxyHandlerV2WithJWTAuthorizer = async (event) 
     );
   } catch (err) {
     if (!(err instanceof ConditionalCheckFailedException)) throw err;
-    // Same Idempotency-Key as an earlier request: return that notification, do not queue it again.
+    // Өмнөх хүсэлттэй ижил Idempotency-Key: тэр notification-ийг буцаана, дахин дараалалд тавихгүй.
     const { Item } = await ddb.send(
       new GetCommand({ TableName: process.env.NOTIFICATIONS_TABLE, Key: { id: notification.id } })
     );
-    // A key must stand for one request. The same key with different content is a client bug and
-    // must not silently answer with some other request's notification.
+    // Түлхүүр нэг хүсэлтийг төлөөлөх ёстой. Ижил түлхүүр өөр агуулгатай байвал client-ийн алдаа бөгөөд
+    // өөр хүсэлтийн notification-ээр чимээгүй хариулах ёсгүй.
     if (
       !Item ||
       Item.recipient !== notification.recipient ||
@@ -88,9 +88,9 @@ export const handler: APIGatewayProxyHandlerV2WithJWTAuthorizer = async (event) 
     return json(200, Item);
   }
 
-  // Step 2: queue it. This can fail on its own (SQS outage, Lambda killed in between). The
-  // item stays PENDING and the scheduled requeueStale function enqueues it later, so the
-  // request is never lost. 202 tells the client it is accepted but not queued yet.
+  // 2-р алхам: дараалалд тавина. Энэ нь тусдаа унаж болно (SQS-ийн доголдол, завсар Lambda зогссон). Мөр
+  // PENDING хэвээр үлдэж, төлөвлөгдсөн requeueStale функц дараа нь дараалалд оруулах тул
+  // хүсэлт хэзээ ч алдагдахгүй. 202 нь хүлээн авсан ч дараалалд хараахан ороогүйг client-д хэлнэ.
   try {
     await sqs.send(
       new SendMessageCommand({

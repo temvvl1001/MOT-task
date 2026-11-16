@@ -4,7 +4,7 @@ vi.mock('./config', () => ({ config: { wsUrl: 'wss://example.test/dev' } }));
 
 import { connectWebSocket, reconnectDelay } from './ws';
 
-// A WebSocket that tests drive by hand.
+// Тестээс гараар удирддаг WebSocket.
 class FakeSocket {
   static instances: FakeSocket[] = [];
   onopen: (() => void) | null = null;
@@ -105,9 +105,9 @@ describe('connectWebSocket', () => {
   it('холболт амжилттай болмогц backoff-ыг эхнээс нь эхэлнэ', async () => {
     setup();
     await flush();
-    FakeSocket.instances[0].drop(); // never opened: failed attempt
+    FakeSocket.instances[0].drop(); // хэзээ ч нээгдээгүй: амжилтгүй оролдлого
     await vi.advanceTimersByTimeAsync(reconnectDelay(0));
-    FakeSocket.instances[1].open(); // success resets the counter
+    FakeSocket.instances[1].open(); // амжилт нь тоолуурыг дахин тэглэнэ
     FakeSocket.instances[1].drop();
     await vi.advanceTimersByTimeAsync(reconnectDelay(0) - 1);
     expect(FakeSocket.instances).toHaveLength(2);

@@ -1,7 +1,7 @@
 import type { Channel, NotificationStatus } from './types';
 
-// Every text the user can read lives here. The API answers errors with a stable `code`
-// (plus an English message for developers); the text shown to the user is chosen by that code.
+// Хэрэглэгчийн уншдаг бүх текст эндээс гарна. API алдааг тогтвортой `code`-оор хариулдаг
+// (мөн хөгжүүлэгчид зориулсан англи тайлбартай); хэрэглэгчид харагдах текстийг тэр кодоор сонгоно.
 export const t = {
   title: 'Мэдэгдлийн хүсэлтүүд',
 
@@ -31,7 +31,7 @@ export const t = {
 
   form: {
     recipient: 'Хүлээн авагч',
-    // What the recipient looks like depends on the channel.
+    // Хүлээн авагч ямар харагдах нь сувгаас хамаарна.
     recipientPlaceholder: {
       EMAIL: 'bold@gmail.com',
       SMS: '+97699112233',
@@ -77,7 +77,7 @@ export const t = {
     authNetwork: 'Сүлжээний алдаа. Нэвтрэх үйлчилгээтэй холбогдож чадсангүй.',
     pleaseSignIn: 'Нэвтэрнэ үү.',
     sessionExpired: 'Нэвтрэх хугацаа дууссан байна. Дахин нэвтэрнэ үү.',
-    // `code` of an API error response -> text for the user
+    // API алдааны хариуны `code` -> хэрэглэгчид харуулах текст
     codes: {
       invalid_body: 'Хүсэлтийн бүтэц буруу байна.',
       invalid_json: 'Хүсэлтийн бүтэц буруу байна.',
@@ -102,6 +102,6 @@ export const t = {
   },
 };
 
-// The text for an API error code, or undefined when the code is not known to the frontend.
+// API алдааны кодын текст, эсвэл код frontend-д үл мэдэгдэх бол undefined.
 export const errorText = (code: unknown): string | undefined =>
   typeof code === 'string' ? t.errors.codes[code] : undefined;

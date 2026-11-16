@@ -1,7 +1,7 @@
-// Delivery failures come in two kinds and the worker treats them differently.
+// Хүргэлтийн алдаа хоёр төрөлтэй бөгөөд worker тэдгээрийг өөрөөр боловсруулна.
 
-// Retrying cannot help (invalid address, recipient rejected the message).
-// The notification is marked FAILED immediately.
+// Дахин оролдсон ч нэмэргүй (хаяг буруу, хүлээн авагч татгалзсан).
+// Notification шууд FAILED болно.
 export class PermanentDeliveryError extends Error {
   constructor(message: string) {
     super(message);
@@ -9,8 +9,8 @@ export class PermanentDeliveryError extends Error {
   }
 }
 
-// Retrying may help (provider outage, throttling, timeout).
-// The notification goes back to PENDING and SQS redelivers it after a backoff.
+// Дахин оролдвол тус болж магадгүй (provider унасан, throttle, timeout).
+// Notification PENDING руу буцаж, SQS backoff-ын дараа дахин хүргэнэ.
 export class TemporaryDeliveryError extends Error {
   constructor(message: string) {
     super(message);

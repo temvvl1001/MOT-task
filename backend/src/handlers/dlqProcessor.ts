@@ -3,9 +3,9 @@ import { failUnfinished } from '../lib/notificationStore';
 import { notify } from '../lib/notify';
 import { parseId } from '../lib/queueMessage';
 
-// Messages reach the dead-letter queue only when the worker itself could not finish them
-// (it crashed, timed out, or the message was unreadable). Without this function the
-// notification would stay PENDING or PROCESSING forever.
+// Message нь зөвхөн worker өөрөө дуусгаж чадаагүй үед dead-letter queue-д орно
+// (унасан, timeout болсон, эсвэл message уншигдахгүй). Энэ функцгүй бол
+// notification үүрд PENDING эсвэл PROCESSING төлөвт гацна.
 export const handler: SQSHandler = async (event) => {
   for (const record of event.Records) {
     const id = parseId(record.body);

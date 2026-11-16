@@ -7,7 +7,7 @@ import { missingConfig } from './config';
 import { useNotifications } from './hooks/useNotifications';
 import { t } from './i18n';
 
-// Only mounted while signed in, so every WebSocket and request has a user behind it.
+// Зөвхөн нэвтэрсэн үед холбогдоно, тиймээс WebSocket, хүсэлт бүрийн ард хэрэглэгч байна.
 function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => void }) {
   const notifications = useNotifications(onSignOut);
 

@@ -1,16 +1,16 @@
-// How many times SQS delivers a message before it is dead-lettered. Kept in one place:
-// serverless.yml feeds the same number to the queue's redrive policy and to this env var.
+// SQS message-ийг dead-letter болгохоос өмнө хэдэн удаа хүргэх вэ. Нэг газар хадгална:
+// serverless.yml үүнтэй ижил тоог дарааллын redrive policy болон энэ env хувьсагчид өгнө.
 export const MAX_ATTEMPTS = Number(process.env.MAX_ATTEMPTS ?? 3);
 
-// The worker Lambda times out after 60 s. A PROCESSING item that has not been touched for
-// longer than this is treated as abandoned and may be claimed again.
+// Worker Lambda 60 секундийн дараа timeout болдог. Энэ хугацаанаас удаан хөндөгдөөгүй PROCESSING мөрийг
+// орхигдсон гэж үзэж, дахин claim хийж болно.
 export const LEASE_MS = 120_000;
 
-// A PENDING item nobody picked up for this long was probably never enqueued.
+// Энэ хугацаанд хэн ч аваагүй PENDING мөр дараалалд хэзээ ч орогдоогүй байх магадлалтай.
 export const STALE_PENDING_MS = Number(process.env.STALE_PENDING_MS ?? 120_000);
 
-// Notifications are deleted by DynamoDB's TTL this long after they were created.
+// Notification-ууд үүссэнээс хойш энэ хугацааны дараа DynamoDB-ийн TTL-ээр устна.
 export const RETENTION_SECONDS = 90 * 24 * 60 * 60;
 
-// Backoff before SQS redelivers a message after a temporary failure: 5 s, 10 s, 20 s ... capped.
+// Түр зуурын алдааны дараа SQS message-ийг дахин хүргэхээс өмнөх backoff: 5 с, 10 с, 20 с ... дээд хязгаартай.
 export const retryDelaySeconds = (attempt: number) => Math.min(5 * 2 ** (attempt - 1), 300);

@@ -4,13 +4,13 @@ import type { Notification } from './types';
 export type ConnectionState = 'connecting' | 'open' | 'closed';
 
 interface Handlers {
-  // Called before every (re)connect, so a reconnect always carries a fresh token.
+  // (Дахин) холбогдох бүрийн өмнө дуудна, ингэснээр дахин холболт үргэлж шинэ token-той байна.
   getToken: () => Promise<string>;
   onUpdate: (notification: Notification) => void;
   onState: (state: ConnectionState) => void;
-  // The connection came back after an outage: refetch what was missed meanwhile.
+  // Тасалдлын дараа холболт сэргэсэн: энэ хооронд алдсаныг дахин татна.
   onReconnect: () => void;
-  // No valid token can be obtained any more.
+  // Хүчинтэй token авах боломжгүй болсон.
   onAuthError: () => void;
 }
 
@@ -19,7 +19,7 @@ const MAX_DELAY_MS = 15_000;
 
 export const reconnectDelay = (retries: number) => Math.min(BASE_DELAY_MS * 2 ** retries, MAX_DELAY_MS);
 
-// Returns a function that closes the connection for good.
+// Холболтыг бүрмөсөн хаадаг функц буцаана.
 export function connectWebSocket({ getToken, onUpdate, onState, onReconnect, onAuthError }: Handlers) {
   let socket: WebSocket | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -62,8 +62,8 @@ export function connectWebSocket({ getToken, onUpdate, onState, onReconnect, onA
       if (socket !== ws) return;
       onState('closed');
       if (stopped) return;
-      // API Gateway ends idle connections after 10 minutes and every connection after 2 hours,
-      // and the network can drop at any time. Reconnect with exponential backoff.
+      // API Gateway идэвхгүй холболтыг 10 минутын дараа, бүх холболтыг 2 цагийн дараа таслана,
+      // мөн сүлжээ хэдийд ч тасарч болно. Exponential backoff-оор дахин холбогдоно.
       timer = setTimeout(open, reconnectDelay(retries));
       retries += 1;
     };

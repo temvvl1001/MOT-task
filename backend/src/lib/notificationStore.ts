@@ -4,10 +4,10 @@ import { ddb } from './clients';
 import { LEASE_MS } from './config';
 import { Notification } from './types';
 
-// Every status change is one conditional UpdateItem, so DynamoDB itself decides the winner
-// when two workers (duplicate SQS delivery, crash + redelivery) race for the same item.
+// Status өөрчлөлт бүр нэг нөхцөлт UpdateItem тул хоёр worker (давхар SQS хүргэлт, унасны дараах дахин хүргэлт)
+// нэг мөрийн төлөө өрсөлдвөл DynamoDB өөрөө ялагчийг шийднэ.
 
-// Returns null when the condition fails: someone else owns the item or it already finished.
+// Нөхцөл биелэхгүй бол null буцаана: мөрийг өөр хүн эзэмшсэн эсвэл аль хэдийн дууссан.
 const conditionalUpdate = async (
   input: Omit<UpdateCommandInput, 'TableName' | 'ReturnValues'>
 ): Promise<Notification | null> => {
@@ -26,8 +26,8 @@ const conditionalUpdate = async (
   }
 };
 
-// PENDING -> PROCESSING. Also succeeds for a stale PROCESSING item (the previous worker
-// died). Fails for missing, finished or in-flight items.
+// PENDING -> PROCESSING. Хуучирсан PROCESSING мөрийг ч авна (өмнөх worker
+// унасан). Байхгүй, дууссан, боловсруулагдаж буй мөрөнд бүтэлгүйтнэ.
 export const claim = (id: string, attempt: number) => {
   const now = Date.now();
   return conditionalUpdate({
@@ -60,7 +60,7 @@ export const finish = (id: string, status: 'COMPLETED' | 'FAILED', result: strin
     },
   });
 
-// PROCESSING -> PENDING after a temporary failure, so the redelivered message can claim it again.
+// Түр зуурын алдааны дараа PROCESSING -> PENDING, ингэснээр дахин хүргэсэн message дахин claim хийнэ.
 export const release = (id: string, reason: string) =>
   conditionalUpdate({
     Key: { id },
@@ -75,7 +75,7 @@ export const release = (id: string, reason: string) =>
     },
   });
 
-// PENDING | PROCESSING -> FAILED. Used when the message was dead-lettered.
+// PENDING | PROCESSING -> FAILED. Message dead-letter болсон үед хэрэглэнэ.
 export const failUnfinished = (id: string, reason: string) =>
   conditionalUpdate({
     Key: { id },

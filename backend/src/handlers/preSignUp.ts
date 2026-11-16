@@ -1,7 +1,7 @@
 import type { PreSignUpTriggerHandler } from 'aws-lambda';
 
-// Demo convenience: confirm every new user immediately so the app works without an email round
-// trip. In production remove this trigger and let Cognito send a verification code instead.
+// Demo-н хялбарчлал: шинэ хэрэглэгчийг тэр дор нь баталгаажуулж, имэйлээр дамжих шаардлагагүй болгоно.
+// Production-д энэ trigger-ийг авч, Cognito-оор баталгаажуулах код илгээлгэнэ.
 export const handler: PreSignUpTriggerHandler = async (event) => {
   event.response.autoConfirmUser = true;
   if (event.request.userAttributes.email) event.response.autoVerifyEmail = true;
