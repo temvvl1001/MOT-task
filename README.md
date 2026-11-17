@@ -1,9 +1,6 @@
 # Notification Request System
 
-Хэрэглэгч бүр өөрийн notification хүсэлтийг илгээж, status-ийн өөрчлөлтийг **WebSocket**-ээр
-шууд (polling-гүй) хүлээн авдаг serverless full-stack аппликейшн.
-
-- **Frontend:** React + Vite + TypeScript. HTTPS дээр API Gateway-ийн `web` Lambda-аас үйлчилнэ (Vercel-д ч deploy хийж болно, [доор](#2-frontend))
+- **Frontend:** React + TypeScript. HTTPS дээр API Gateway-ийн `web` Lambda-аас үйлчилнэ. өөрийн сонгосон hosting AWS 
 - **Backend:** AWS Lambda, API Gateway (HTTP + WebSocket), DynamoDB, SQS, Cognito. Serverless Framework v3
 - **Live demo:** https://mb8qvsd64b.execute-api.ap-southeast-2.amazonaws.com (дурын имэйлээр бүртгүүлж болно, имэйл баталгаажуулалтгүй)
   Туршихдаа хүлээн авагчид `fail@…`, `flaky@…`, `outage@…` гэж бичвэл алдааны замууд харагдана.
@@ -310,27 +307,6 @@ aws cloudformation describe-stacks --stack-name notification-system-dev --region
 Төгсгөлд хаяг хэвлэнэ. `web` Lambda нь hash-тэй asset-ийг 1 жил cache хийлгэж, `index.html`-ийг үргэлж
 шинэчилнэ, gzip шахна, мөн өөрийн Content-Security-Policy, HSTS, `X-Frame-Options` header-уудыг тавина.
 
-> **Яагаад S3 + CloudFront биш вэ?** Хамгийн түрүүнд CloudFront-ыг оролдсон (`FrontendDistribution`). AWS шинэ
-> account-д үүнийг хориглосон: *"Your account must be verified before you can add new CloudFront resources"*.
-> Үүнийг зөвхөн AWS Support шийднэ. Тиймээс `web` Lambda-г сонгосон. Account баталгаажсаны дараа S3 + CloudFront
-> руу шилжих нь илүү хямд, хурдан (CDN). Энэ нь `scripts/deploy-frontend.sh`-ийг л солино, backend хэвээр.
-
-**Өөр арга: Vercel.**
-
-1. Repository-г GitHub-д түлхэнэ.
-2. https://vercel.com → **Add New… → Project** → repository-г сонгоно.
-3. **Root Directory:** `frontend`. Framework нь Vite гэж автоматаар танигдана (Build `npm run build`,
-   Output `dist`).
-4. **Environment Variables**:
-
-| Хувьсагч | Утга |
-|---|---|
-| `VITE_API_URL` | HTTP API-ийн origin, жишээ нь `https://<http-api-id>.execute-api.<region>.amazonaws.com` |
-| `VITE_WS_URL` | `wss://<ws-api-id>.execute-api.<region>.amazonaws.com/dev` |
-| `VITE_COGNITO_REGION` | `<region>`, жишээ нь `ap-southeast-2` |
-| `VITE_COGNITO_CLIENT_ID` | Cognito-ийн `UserPoolClientId` |
-
-5. **Deploy**, дараа нь CORS-д Vercel-ийн хаягийг нэмнэ (доор).
 
 ### 3. CORS
 
